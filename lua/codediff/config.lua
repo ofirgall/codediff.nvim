@@ -36,6 +36,7 @@ M.defaults = {
     original_position = "left", -- Position of original (old) content: "left" or "right"
     conflict_ours_position = "right", -- Position of ours (:2) in conflict view: "left" or "right" (independent of original_position)
     cycle_next_hunk = true, -- Wrap around when navigating hunks (]c/[c): true = cycle, false = stop at first/last
+    cycle_next_file = true, -- Wrap around when navigating files (]f/[f): true = cycle, false = stop at first/last
   },
 
   -- Explorer panel configuration

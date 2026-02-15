@@ -51,7 +51,11 @@ function M.navigate_next(explorer)
     end
   end
 
-  -- Get next file (wrap around)
+  -- Get next file (wrap around if enabled)
+  if current_index >= #all_files and not config.options.diff.cycle_next_file then
+    vim.api.nvim_echo({ { string.format("Last file (%d of %d)", #all_files, #all_files), "WarningMsg" } }, false, {})
+    return
+  end
   local next_index = current_index % #all_files + 1
   local next_file = all_files[next_index]
 
@@ -98,7 +102,11 @@ function M.navigate_prev(explorer)
     end
   end
 
-  -- Get previous file (wrap around)
+  -- Get previous file (wrap around if enabled)
+  if current_index <= 1 and not config.options.diff.cycle_next_file then
+    vim.api.nvim_echo({ { string.format("First file (1 of %d)", #all_files), "WarningMsg" } }, false, {})
+    return
+  end
   local prev_index = current_index - 2
   if prev_index < 0 then
     prev_index = #all_files + prev_index

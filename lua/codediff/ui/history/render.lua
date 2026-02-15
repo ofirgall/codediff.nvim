@@ -435,6 +435,11 @@ function M.navigate_next(history)
     end
   end
 
+  if current_index >= #all_files and not config.options.diff.cycle_next_file then
+    vim.api.nvim_echo({ { string.format("Last file (%d of %d)", #all_files, #all_files), "WarningMsg" } }, false, {})
+    return
+  end
+
   local next_index = current_index % #all_files + 1
   local next_file = all_files[next_index]
 
@@ -472,6 +477,11 @@ function M.navigate_prev(history)
       current_index = i
       break
     end
+  end
+
+  if current_index <= 1 and not config.options.diff.cycle_next_file then
+    vim.api.nvim_echo({ { string.format("First file (1 of %d)", #all_files), "WarningMsg" } }, false, {})
+    return
   end
 
   local prev_index = current_index - 2
@@ -538,6 +548,11 @@ function M.navigate_next_commit(history)
     end
   end
 
+  if current_index >= #all_commits and not config.options.diff.cycle_next_file then
+    vim.api.nvim_echo({ { string.format("Last commit (%d of %d)", #all_commits, #all_commits), "WarningMsg" } }, false, {})
+    return
+  end
+
   local next_index = current_index % #all_commits + 1
   local next_commit = all_commits[next_index]
 
@@ -588,6 +603,11 @@ function M.navigate_prev_commit(history)
       current_index = i
       break
     end
+  end
+
+  if current_index <= 1 and not config.options.diff.cycle_next_file then
+    vim.api.nvim_echo({ { string.format("First commit (1 of %d)", #all_commits), "WarningMsg" } }, false, {})
+    return
   end
 
   local prev_index = current_index - 2
