@@ -2,6 +2,19 @@
 -- All operations are async and atomic
 local M = {}
 
+-- Unquote git C-quoted paths (e.g., "my file.md" -> my file.md)
+local function unquote_path(path)
+  if path:sub(1, 1) == '"' and path:sub(-1) == '"' then
+    local unquoted = path:sub(2, -2)
+    unquoted = unquoted:gsub("\\(.)", function(char)
+      local escapes = { a = "\a", b = "\b", t = "\t", n = "\n", v = "\v", f = "\f", r = "\r", ["\\"] = "\\", ['"'] = '"' }
+      return escapes[char] or char
+    end)
+    return unquoted
+  end
+  return path
+end
+
 -- LRU Cache for git file content
 -- Stores recently fetched file content to avoid redundant git calls
 local ContentCache = {}
@@ -340,7 +353,7 @@ function M.get_status(git_root, callback)
         if #line >= 3 then
           local index_status = line:sub(1, 1)
           local worktree_status = line:sub(2, 2)
-          local path_part = line:sub(4)
+          local path_part = unquote_path(line:sub(4))
 
           -- Handle renames: "old_path -> new_path"
           local old_path, new_path = path_part:match("^(.+) %-> (.+)$")
@@ -403,13 +416,13 @@ function M.get_diff_revision(revision, git_root, callback)
         local parts = vim.split(line, "\t")
         if #parts >= 2 then
           local status = parts[1]:sub(1, 1)
-          local path = parts[2]
+          local path = unquote_path(parts[2])
           local old_path = nil
 
           -- Handle renames (R100 or similar)
           if status == "R" and #parts >= 3 then
-            old_path = parts[2]
-            path = parts[3]
+            old_path = unquote_path(parts[2])
+            path = unquote_path(parts[3])
           end
 
           table.insert(result.unstaged, {
@@ -471,13 +484,13 @@ function M.get_diff_revisions(rev1, rev2, git_root, callback)
         local parts = vim.split(line, "\t")
         if #parts >= 2 then
           local status = parts[1]:sub(1, 1)
-          local path = parts[2]
+          local path = unquote_path(parts[2])
           local old_path = nil
 
           -- Handle renames (R100 or similar)
           if status == "R" and #parts >= 3 then
-            old_path = parts[2]
-            path = parts[3]
+            old_path = unquote_path(parts[2])
+            path = unquote_path(parts[3])
           end
 
           table.insert(result.unstaged, {
@@ -491,6 +504,118 @@ function M.get_diff_revisions(rev1, rev2, git_root, callback)
 
     callback(nil, result)
   end)
+end
+
+-- Apply a unified diff patch to the git index (async)
+-- Used for hunk-level staging: generates a patch for a single hunk and applies it
+-- to the index without touching the working tree.
+--
+-- git_root: absolute path to git repository root
+-- patch: string containing a valid unified diff patch
+-- reverse: if true, reverse-apply the patch (used for unstaging)
+-- callback: function(err) - nil err on success
+-- Apply a unified diff patch via git apply (async)
+-- Supports staging hunks (--cached), unstaging (--cached --reverse),
+-- and discarding from working tree (--reverse, no --cached).
+--
+-- git_root: absolute path to git repository root
+-- patch: string containing a valid unified diff patch
+-- opts: table with optional flags:
+--   cached: boolean - apply to index (default: true)
+--   reverse: boolean - reverse-apply the patch (default: false)
+-- callback: function(err) - nil err on success
+function M.apply_patch(git_root, patch, opts, callback)
+  -- Support old signature: apply_patch(git_root, patch, reverse, callback)
+  if type(opts) == "boolean" then
+    opts = { cached = true, reverse = opts }
+  end
+  opts = opts or {}
+  if opts.cached == nil then
+    opts.cached = true
+  end
+
+  local args = { "apply", "--unidiff-zero", "-" }
+  if opts.cached then
+    table.insert(args, 2, "--cached")
+  end
+  if opts.reverse then
+    table.insert(args, 2, "--reverse")
+  end
+
+  if vim.system then
+    if git_root and vim.fn.isdirectory(git_root) == 0 then
+      callback("Directory does not exist: " .. git_root)
+      return
+    end
+
+    vim.system(vim.list_extend({ "git" }, args), {
+      cwd = git_root,
+      stdin = patch,
+      text = true,
+    }, function(result)
+      vim.schedule(function()
+        if result.code == 0 then
+          callback(nil)
+        else
+          callback(result.stderr or "git apply failed")
+        end
+      end)
+    end)
+  else
+    -- Fallback for older Neovim (< 0.10)
+    local stderr_data = {}
+    local stdin_pipe = vim.loop.new_pipe(false)
+    local stderr_pipe = vim.loop.new_pipe(false)
+
+    local handle
+    ---@diagnostic disable-next-line: missing-fields
+    handle = vim.loop.spawn("git", {
+      args = args,
+      cwd = git_root,
+      stdio = { stdin_pipe, nil, stderr_pipe },
+    }, function(code)
+      if stdin_pipe then
+        stdin_pipe:close()
+      end
+      if stderr_pipe then
+        stderr_pipe:close()
+      end
+      if handle then
+        handle:close()
+      end
+
+      vim.schedule(function()
+        if code == 0 then
+          callback(nil)
+        else
+          callback(table.concat(stderr_data) or "git apply failed")
+        end
+      end)
+    end)
+
+    if not handle then
+      callback("Failed to spawn git process")
+      return
+    end
+
+    if stderr_pipe then
+      stderr_pipe:read_start(function(err, data)
+        if data then
+          table.insert(stderr_data, data)
+        end
+      end)
+    end
+
+    -- Write patch to stdin and close
+    stdin_pipe:write(patch)
+    stdin_pipe:shutdown()
+  end
+end
+
+-- Discard a hunk from the working tree by reverse-applying a patch (async)
+-- Convenience wrapper: applies patch in reverse to working tree (not index)
+function M.discard_hunk_patch(git_root, patch, callback)
+  M.apply_patch(git_root, patch, { cached = false, reverse = true }, callback)
 end
 
 -- Run a git command synchronously
@@ -765,13 +890,13 @@ function M.get_commit_files(commit_hash, git_root, callback)
       local parts = vim.split(line, "\t")
       if #parts >= 2 then
         local status = parts[1]:sub(1, 1)
-        local path = parts[2]
+        local path = unquote_path(parts[2])
         local old_path = nil
 
         -- Handle renames (R100 or similar)
         if status == "R" and #parts >= 3 then
-          old_path = parts[2]
-          path = parts[3]
+          old_path = unquote_path(parts[2])
+          path = unquote_path(parts[3])
         end
 
         table.insert(files, {
