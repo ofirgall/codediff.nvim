@@ -78,7 +78,7 @@ function M.setup_conflict_result_window(tabpage, session_config, original_win, m
   end
 
   -- Set window options for result
-  vim.wo[result_win].wrap = false
+  -- vim.wo[result_win].wrap = false
   vim.wo[result_win].cursorline = true
 
   -- Enable scrollbind for result window

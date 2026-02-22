@@ -124,7 +124,7 @@ function M.create(session_config, filetype, on_ready)
   -- Note: number and relativenumber are intentionally NOT set to honor user's local config
   local win_opts = {
     cursorline = true,
-    wrap = false,
+    -- wrap = false,
   }
 
   for opt, val in pairs(win_opts) do
