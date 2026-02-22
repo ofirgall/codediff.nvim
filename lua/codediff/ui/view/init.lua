@@ -24,7 +24,6 @@ local compute_and_render = render.compute_and_render
 local compute_and_render_conflict = render.compute_and_render_conflict
 local setup_auto_refresh = render.setup_auto_refresh
 local setup_conflict_result_window = conflict_window.setup_conflict_result_window
-local setup_all_keymaps = view_keymaps.setup_all_keymaps
 
 ---@class SessionConfig
 ---@field mode "standalone"|"explorer"|"history"
@@ -158,7 +157,7 @@ function M.create(session_config, filetype, on_ready)
           return
         end
         local is_explorer = lifecycle.get_mode(tabpage) == "explorer"
-        setup_all_keymaps(tabpage, ob, mb, is_explorer)
+        view_keymaps.setup_all_keymaps(tabpage, ob, mb, is_explorer)
       end
     )
   else
@@ -226,7 +225,7 @@ function M.create(session_config, filetype, on_ready)
                   if not ob or not mb then
                     return
                   end
-                  setup_all_keymaps(tabpage, ob, mb, false)
+                  view_keymaps.setup_all_keymaps(tabpage, ob, mb, false)
                   local conflict = require("codediff.ui.conflict")
                   conflict.setup_keymaps(tabpage)
                 end
@@ -238,7 +237,7 @@ function M.create(session_config, filetype, on_ready)
               -- Setup result window and keymaps
               local success = setup_conflict_result_window(tabpage, session_config, original_win, modified_win, base_lines, conflict_diffs, false)
               if success then
-                setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, false)
+                view_keymaps.setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, false)
                 -- Setup conflict keymaps AFTER setup_all_keymaps to override do/dp
                 local conflict = require("codediff.ui.conflict")
                 conflict.setup_keymaps(tabpage)
@@ -286,7 +285,7 @@ function M.create(session_config, filetype, on_ready)
                 return
               end
               local is_explorer = lifecycle.get_mode(tabpage) == "explorer"
-              setup_all_keymaps(tabpage, ob, mb, is_explorer)
+              view_keymaps.setup_all_keymaps(tabpage, ob, mb, is_explorer)
             end
           )
 
@@ -294,7 +293,7 @@ function M.create(session_config, filetype, on_ready)
           setup_auto_refresh(original_info.bufnr, modified_info.bufnr, original_is_virtual, modified_is_virtual)
 
           -- Setup all keymaps in one place (centralized)
-          setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, false)
+          view_keymaps.setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, false)
 
           -- Setup auto-sync on file switch (after session is complete!)
           lifecycle.setup_auto_sync_on_file_switch(tabpage, original_is_virtual, modified_is_virtual)
@@ -469,7 +468,7 @@ function M.create(session_config, filetype, on_ready)
     end
 
     -- Setup keymaps for history mode (needs to be after session is created with mode="history")
-    setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, false)
+    view_keymaps.setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, false)
   end
 
   return {
@@ -610,7 +609,7 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
             local is_explorer_mode = session.mode == "explorer"
             local success = setup_conflict_result_window(tabpage, session_config, original_win, modified_win, base_lines, conflict_diffs, true)
             if success then
-              setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, is_explorer_mode)
+              view_keymaps.setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, is_explorer_mode)
               -- Setup conflict keymaps AFTER setup_all_keymaps to override do/dp
               local conflict = require("codediff.ui.conflict")
               conflict.setup_keymaps(tabpage)
@@ -646,7 +645,7 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
 
         -- Setup all keymaps in one place (centralized)
         local is_explorer_mode = session.mode == "explorer"
-        setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, is_explorer_mode)
+        view_keymaps.setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, is_explorer_mode)
 
         -- Restore focus to the window that was active before update
         if saved_current_win and vim.api.nvim_win_is_valid(saved_current_win) then
