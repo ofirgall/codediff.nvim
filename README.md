@@ -111,7 +111,7 @@ https://github.com/user-attachments/assets/64c41f01-dffe-4318-bce4-16eec8de356e
       },
       view_mode = "list",    -- "list" or "tree"
       file_filter = {
-        ignore = {},  -- Glob patterns to hide (e.g., {"*.lock", "dist/*"})
+        ignore = { ".git/**", ".jj/**" },  -- Glob patterns to hide (e.g., {"*.lock", "dist/*"})
       },
       focus_on_select = false,  -- Jump to modified pane after selecting a file (default: stay in explorer)
     },
