@@ -670,6 +670,26 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     if keymaps.discard_hunk then
       vim.keymap.set("n", keymaps.discard_hunk, discard_hunk, vim.tbl_extend("force", hunk_opts, { buffer = bufnr, desc = "Discard hunk under cursor" }))
     end
+
+    -- Hunk textobject (ih) - select hunk lines in visual/operator-pending mode
+    if keymaps.hunk_textobject then
+      local function select_hunk()
+        local mapping = find_hunk_at_cursor()
+        if not mapping then return end
+
+        local current_buf = vim.api.nvim_get_current_buf()
+        local is_original = current_buf == original_bufnr
+        local start_line = is_original and mapping.original.start_line or mapping.modified.start_line
+        local end_line = is_original and mapping.original.end_line or mapping.modified.end_line
+
+        -- end_line is exclusive, and empty ranges (deletions) can't be selected
+        if start_line >= end_line then return end
+
+        vim.cmd("normal! " .. start_line .. "GV" .. (end_line - 1) .. "G")
+      end
+
+      vim.keymap.set({ "o", "x" }, keymaps.hunk_textobject, select_hunk, vim.tbl_extend("force", hunk_opts, { buffer = bufnr, desc = "Hunk textobject" }))
+    end
   end
 end
 

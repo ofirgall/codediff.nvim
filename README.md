@@ -144,6 +144,7 @@ https://github.com/user-attachments/assets/64c41f01-dffe-4318-bce4-16eec8de356e
         stage_hunk = "<leader>hs",   -- Stage hunk under cursor to git index
         unstage_hunk = "<leader>hu", -- Unstage hunk under cursor from git index
         discard_hunk = "<leader>hr", -- Discard hunk under cursor (working tree only)
+        hunk_textobject = "ih",      -- Textobject for hunk (vih to select, yih to yank, etc.)
         show_help = "g?",   -- Show floating window with available keymaps
       },
       explorer = {
