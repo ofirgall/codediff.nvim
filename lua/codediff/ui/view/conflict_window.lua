@@ -4,6 +4,7 @@ local M = {}
 local lifecycle = require("codediff.ui.lifecycle")
 local auto_refresh = require("codediff.ui.auto_refresh")
 local config = require("codediff.config")
+local layout = require("codediff.ui.layout")
 
 --- Create result window at the bottom (default layout)
 --- Layout: [incoming | current] on top, [result] at bottom
@@ -15,9 +16,6 @@ local function create_bottom_layout(modified_win, original_win)
   local result_win = vim.api.nvim_open_win(scratch, true, { split = "below", win = modified_win })
 
   vim.fn.win_splitmove(original_win, modified_win, { vertical = true, rightbelow = false })
-
-  local pct = math.min(90, math.max(10, config.options.diff.conflict_result_height))
-  vim.api.nvim_win_set_height(result_win, math.floor(vim.o.lines * pct / 100))
 
   return result_win
 end
@@ -34,21 +32,6 @@ local function create_center_layout(modified_win, original_win)
 
   local scratch = vim.api.nvim_create_buf(false, true)
   local result_win = vim.api.nvim_open_win(scratch, true, { split = "right", win = left_win })
-
-  local r = config.options.diff.conflict_result_width_ratio
-  local total = r[1] + r[2] + r[3]
-  local lw = math.floor(vim.o.columns * r[1] / total)
-  local cw = math.floor(vim.o.columns * r[2] / total)
-
-  if left_win == original_win then
-    vim.api.nvim_win_set_width(original_win, lw)
-    vim.api.nvim_win_set_width(result_win, cw)
-    vim.api.nvim_win_set_width(modified_win, vim.o.columns - lw - cw)
-  else
-    vim.api.nvim_win_set_width(modified_win, lw)
-    vim.api.nvim_win_set_width(result_win, cw)
-    vim.api.nvim_win_set_width(original_win, vim.o.columns - lw - cw)
-  end
 
   return result_win
 end
@@ -129,6 +112,9 @@ function M.setup_conflict_result_window(tabpage, session_config, original_win, m
   lifecycle.set_result_base_lines(tabpage, base_lines)
   lifecycle.set_conflict_blocks(tabpage, conflict_diffs.conflict_blocks)
   lifecycle.track_conflict_file(tabpage, abs_path)
+
+  -- Arrange all windows now that lifecycle knows about result_win
+  layout.arrange(tabpage)
 
   -- Now set winbar titles for conflict windows based on conflict_ours_position
   -- (After set_result so ensure_no_winbar can detect conflict mode)

@@ -4,6 +4,7 @@ local M = {}
 local config = require("codediff.config")
 local git = require("codediff.core.git")
 local refresh_module = require("codediff.ui.explorer.refresh")
+local layout = require("codediff.ui.layout")
 
 -- Find line number for a file node by scanning the tree
 -- Returns the line number or nil if not found
@@ -134,45 +135,22 @@ function M.toggle_visibility(explorer)
     return
   end
 
-  -- Track visibility state on the explorer object
+  local tabpage = vim.api.nvim_get_current_tabpage()
+
   if explorer.is_hidden then
     explorer.split:show()
     explorer.is_hidden = false
-
-    -- Update winid after show() creates a new window
-    -- show() creates a new window with a new winid
     explorer.winid = explorer.split.winid
 
-    -- Equalize diff windows after showing explorer
-    -- When explorer shows, the remaining space should be split equally between diff windows
     vim.schedule(function()
-      -- Find diff windows (exclude explorer window)
-      local all_wins = vim.api.nvim_tabpage_list_wins(0)
-      local diff_wins = {}
-
-      for _, win in ipairs(all_wins) do
-        if vim.api.nvim_win_is_valid(win) and win ~= explorer.split.winid then
-          table.insert(diff_wins, win)
-        end
-      end
-
-      -- Equalize the diff windows (typically 2 windows)
-      if #diff_wins >= 2 then
-        vim.cmd("wincmd =")
-      end
-
-      -- Restore explorer width after equalize
-      if explorer.split.winid and vim.api.nvim_win_is_valid(explorer.split.winid) then
-        vim.api.nvim_win_set_width(explorer.split.winid, explorer.split._size)
-      end
+      layout.arrange(tabpage)
     end)
   else
     explorer.split:hide()
     explorer.is_hidden = true
 
-    -- Equalize diff windows after hiding explorer
     vim.schedule(function()
-      vim.cmd("wincmd =")
+      layout.arrange(tabpage)
     end)
   end
 end

@@ -16,6 +16,7 @@ local conflict_window = require("codediff.ui.view.conflict_window")
 -- when CWD changes in vim.schedule callbacks
 local explorer_module = require("codediff.ui.explorer")
 local history_module = require("codediff.ui.history")
+local layout = require("codediff.ui.layout")
 
 -- Re-export helper functions for backward compatibility
 local is_virtual_revision = helpers.is_virtual_revision
@@ -412,21 +413,7 @@ function M.create(session_config, filetype, on_ready)
     -- Note: Keymaps will be set when first file is selected via update()
 
     -- Adjust diff window sizes based on explorer position
-    if position == "bottom" then
-      vim.cmd("wincmd =")
-      if explorer_obj and explorer_obj.winid and vim.api.nvim_win_is_valid(explorer_obj.winid) then
-        vim.api.nvim_win_set_height(explorer_obj.winid, explorer_config.height or 15)
-      end
-    else
-      -- For left position, calculate remaining width and split equally
-      local total_width = vim.o.columns
-      local explorer_width = explorer_config.width or 40
-      local remaining_width = total_width - explorer_width
-      local diff_width = math.floor(remaining_width / 2)
-
-      vim.api.nvim_win_set_width(original_win, diff_width)
-      vim.api.nvim_win_set_width(modified_win, diff_width)
-    end
+    layout.arrange(tabpage)
   end
 
   -- For history mode, create the history panel after diff windows are set up
@@ -458,20 +445,7 @@ function M.create(session_config, filetype, on_ready)
     end
 
     -- Adjust diff window sizes based on panel position
-    if position == "bottom" then
-      vim.cmd("wincmd =")
-      if history_obj and history_obj.winid and vim.api.nvim_win_is_valid(history_obj.winid) then
-        vim.api.nvim_win_set_height(history_obj.winid, history_config.height or 15)
-      end
-    else
-      local total_width = vim.o.columns
-      local panel_width = history_config.width or 40
-      local remaining_width = total_width - panel_width
-      local diff_width = math.floor(remaining_width / 2)
-
-      vim.api.nvim_win_set_width(original_win, diff_width)
-      vim.api.nvim_win_set_width(modified_win, diff_width)
-    end
+    layout.arrange(tabpage)
 
     -- Setup keymaps for history mode (needs to be after session is created with mode="history")
     setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, false)
@@ -554,10 +528,7 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
       vim.w[modified_win].codediff_placeholder = nil
     end
     pcall(vim.api.nvim_del_augroup_by_name, "codediff_skip_placeholder_" .. tabpage)
-    local total_width = vim.api.nvim_win_get_width(original_win) + vim.api.nvim_win_get_width(modified_win)
-    local half_width = math.floor(total_width / 2)
-    vim.api.nvim_win_set_width(original_win, half_width)
-    vim.api.nvim_win_set_width(modified_win, half_width)
+    layout.arrange(tabpage)
   end
 
   -- Determine if new buffers are virtual
@@ -680,10 +651,7 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
             vim.w[modified_win].codediff_placeholder = nil
           end
           pcall(vim.api.nvim_del_augroup_by_name, "codediff_skip_placeholder_" .. tabpage)
-          local total_width = vim.api.nvim_win_get_width(original_win) + vim.api.nvim_win_get_width(modified_win)
-          local half_width = math.floor(total_width / 2)
-          vim.api.nvim_win_set_width(original_win, half_width)
-          vim.api.nvim_win_set_width(modified_win, half_width)
+          layout.arrange(tabpage)
         end
       end
     end

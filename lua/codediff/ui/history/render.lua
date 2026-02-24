@@ -7,6 +7,7 @@ local config = require("codediff.config")
 local git = require("codediff.core.git")
 local nodes_module = require("codediff.ui.history.nodes")
 local keymaps_module = require("codediff.ui.history.keymaps")
+local layout = require("codediff.ui.layout")
 
 -- Build tree nodes from commits list (shared between create and refresh)
 function M.build_tree_nodes(commits, git_root, opts)
@@ -658,22 +659,20 @@ function M.toggle_visibility(history)
     return
   end
 
+  local tabpage = vim.api.nvim_get_current_tabpage()
+
   if history.is_hidden then
     history.split:show()
     history.is_hidden = false
     history.winid = history.split.winid
     vim.schedule(function()
-      vim.cmd("wincmd =")
-      -- Restore history panel size after equalize
-      if history.split.winid and vim.api.nvim_win_is_valid(history.split.winid) then
-        vim.api.nvim_win_set_height(history.split.winid, history.split._size)
-      end
+      layout.arrange(tabpage)
     end)
   else
     history.split:hide()
     history.is_hidden = true
     vim.schedule(function()
-      vim.cmd("wincmd =")
+      layout.arrange(tabpage)
     end)
   end
 end
