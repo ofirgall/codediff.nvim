@@ -731,4 +731,463 @@ describe("Layout Manager", function()
 
     cleanup_mock_session(tabpage)
   end)
+
+  -- =========================================================================
+  -- Case 10: Single-pane (untracked) without panel — [mod] fills full width
+  -- =========================================================================
+  it("Case 10: Single-pane without panel — sole window fills full width", function()
+    vim.cmd("tabnew")
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local mod_win = vim.api.nvim_get_current_win()
+    local mod_buf = vim.api.nvim_get_current_buf()
+
+    -- original_win points to a closed (invalid) window ID
+    create_mock_session(tabpage, {
+      original_win = 99999, -- invalid window
+      modified_win = mod_win,
+      original_bufnr = mod_buf,
+      modified_bufnr = mod_buf,
+    })
+    local session_mod = require("codediff.ui.lifecycle.session")
+    session_mod.get_active_diffs()[tabpage].single_pane = true
+
+    layout.arrange(tabpage)
+
+    local mod_w = vim.api.nvim_win_get_width(mod_win)
+    -- Single window should take all available columns (minus border/separator)
+    assert_width_near(vim.o.columns, mod_w, "Single pane should fill full width:")
+
+    cleanup_mock_session(tabpage)
+  end)
+
+  -- =========================================================================
+  -- Case 11: Single-pane (untracked) with explorer left — [expl | mod]
+  -- =========================================================================
+  it("Case 11: Single-pane with explorer left — panel pinned, sole diff pane fills remainder", function()
+    local panel_width = 35
+    config.options.explorer = { position = "left", width = panel_width }
+
+    vim.cmd("tabnew")
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local mod_win = vim.api.nvim_get_current_win()
+    local mod_buf = vim.api.nvim_get_current_buf()
+
+    local panel = create_panel_split("left", panel_width)
+
+    create_mock_session(tabpage, {
+      mode = "explorer",
+      original_win = 99999, -- invalid window (was closed)
+      modified_win = mod_win,
+      original_bufnr = mod_buf,
+      modified_bufnr = mod_buf,
+      panel = panel,
+    })
+    local session_mod = require("codediff.ui.lifecycle.session")
+    session_mod.get_active_diffs()[tabpage].single_pane = true
+
+    layout.arrange(tabpage)
+
+    local panel_w = vim.api.nvim_win_get_width(panel.winid)
+    local mod_w = vim.api.nvim_win_get_width(mod_win)
+
+    assert.are.equal(panel_width, panel_w, "Panel should be configured width")
+    -- Diff pane should fill the rest: columns - panel_width - 1 separator
+    local expected_diff = vim.o.columns - panel_width - 1
+    assert_width_near(expected_diff, mod_w, "Single diff pane should fill remainder:")
+
+    cleanup_mock_session(tabpage)
+  end)
+
+  -- =========================================================================
+  -- Case 12: Single-pane (deleted) with explorer left — [expl | orig]
+  -- =========================================================================
+  it("Case 12: Single-pane deleted with explorer left — panel pinned, sole diff pane fills remainder", function()
+    local panel_width = 35
+    config.options.explorer = { position = "left", width = panel_width }
+
+    vim.cmd("tabnew")
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local orig_win = vim.api.nvim_get_current_win()
+    local orig_buf = vim.api.nvim_get_current_buf()
+
+    local panel = create_panel_split("left", panel_width)
+
+    create_mock_session(tabpage, {
+      mode = "explorer",
+      original_win = orig_win,
+      modified_win = 99999, -- invalid window (was closed)
+      original_bufnr = orig_buf,
+      modified_bufnr = orig_buf,
+      panel = panel,
+    })
+    local session_mod = require("codediff.ui.lifecycle.session")
+    session_mod.get_active_diffs()[tabpage].single_pane = true
+
+    layout.arrange(tabpage)
+
+    local panel_w = vim.api.nvim_win_get_width(panel.winid)
+    local orig_w = vim.api.nvim_win_get_width(orig_win)
+
+    assert.are.equal(panel_width, panel_w, "Panel should be configured width")
+    local expected_diff = vim.o.columns - panel_width - 1
+    assert_width_near(expected_diff, orig_w, "Single diff pane should fill remainder:")
+
+    cleanup_mock_session(tabpage)
+  end)
+
+  -- =========================================================================
+  -- Case 13: Single-pane with explorer bottom — [mod] / [expl]
+  -- =========================================================================
+  it("Case 13: Single-pane with explorer bottom — panel height pinned, diff pane fills width", function()
+    local panel_height = 12
+    config.options.explorer = { position = "bottom", height = panel_height }
+
+    vim.cmd("tabnew")
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local mod_win = vim.api.nvim_get_current_win()
+    local mod_buf = vim.api.nvim_get_current_buf()
+
+    local panel = create_panel_split("bottom", panel_height)
+
+    create_mock_session(tabpage, {
+      mode = "explorer",
+      original_win = 99999,
+      modified_win = mod_win,
+      original_bufnr = mod_buf,
+      modified_bufnr = mod_buf,
+      panel = panel,
+    })
+    local session_mod = require("codediff.ui.lifecycle.session")
+    session_mod.get_active_diffs()[tabpage].single_pane = true
+
+    layout.arrange(tabpage)
+
+    local panel_h = vim.api.nvim_win_get_height(panel.winid)
+    local mod_w = vim.api.nvim_win_get_width(mod_win)
+
+    assert.are.equal(panel_height, panel_h, "Panel height should be preserved")
+    assert_width_near(vim.o.columns, mod_w, "Single diff pane should fill full width:")
+
+    cleanup_mock_session(tabpage)
+  end)
+
+  -- =========================================================================
+  -- Case 14: show_untracked_file closes original, single-pane, no highlights
+  -- =========================================================================
+  it("Case 14: show_untracked_file — closes orig, single-pane, diff pane fills remainder", function()
+    local panel_width = 35
+    config.options.explorer = { position = "left", width = panel_width }
+
+    vim.cmd("tabnew")
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local orig_win = vim.api.nvim_get_current_win()
+    local orig_buf = vim.api.nvim_get_current_buf()
+    vim.cmd("vsplit")
+    local mod_win = vim.api.nvim_get_current_win()
+    local mod_buf = vim.api.nvim_get_current_buf()
+
+    local panel = create_panel_split("left", panel_width)
+
+    -- Create a real session (show_untracked_file reads from lifecycle)
+    local session_mod = require("codediff.ui.lifecycle.session")
+    local state = require("codediff.ui.lifecycle.state")
+    session_mod.get_active_diffs()[tabpage] = {
+      mode = "explorer",
+      git_root = "/tmp",
+      original_path = "",
+      modified_path = "",
+      original_revision = nil,
+      modified_revision = nil,
+      original_bufnr = orig_buf,
+      modified_bufnr = mod_buf,
+      original_win = orig_win,
+      modified_win = mod_win,
+      explorer = panel,
+      stored_diff_result = {},
+      changedtick = { original = 0, modified = 0 },
+      mtime = { original = nil, modified = nil },
+      original_state = state.save_buffer_state(orig_buf),
+      modified_state = state.save_buffer_state(mod_buf),
+      suspended = false,
+    }
+    vim.w[orig_win].codediff_restore = 1
+    vim.w[mod_win].codediff_restore = 1
+
+    -- Write a temp file to load
+    local tmp_file = "/tmp/test_untracked_layout.txt"
+    vim.fn.writefile({"content"}, tmp_file)
+
+    local side_by_side = require("codediff.ui.view.side_by_side")
+    side_by_side.show_untracked_file(tabpage, tmp_file)
+
+    local session = session_mod.get_active_diffs()[tabpage]
+
+    -- Validate: single_pane set, original window closed
+    assert.is_true(session.single_pane == true, "single_pane should be true")
+    assert.is_false(vim.api.nvim_win_is_valid(orig_win), "Original window should be closed")
+    assert.is_true(vim.api.nvim_win_is_valid(mod_win), "Modified window should be valid")
+
+    -- Validate: no diff highlights on the modified buffer
+    local highlights = require("codediff.ui.highlights")
+    local hl_marks = vim.api.nvim_buf_get_extmarks(session.modified_bufnr, highlights.ns_highlight, 0, -1, {})
+    local filler_marks = vim.api.nvim_buf_get_extmarks(session.modified_bufnr, highlights.ns_filler, 0, -1, {})
+    assert.are.equal(0, #hl_marks, "No diff highlights should remain on modified buffer")
+    assert.are.equal(0, #filler_marks, "No filler highlights should remain on modified buffer")
+
+    -- Validate: layout — diff pane fills remainder
+    local panel_w = vim.api.nvim_win_get_width(panel.winid)
+    local mod_w = vim.api.nvim_win_get_width(mod_win)
+    assert.are.equal(panel_width, panel_w, "Panel should be configured width")
+    local expected_diff = vim.o.columns - panel_width - 1
+    assert_width_near(expected_diff, mod_w, "Diff pane should fill remainder:")
+
+    -- Validate: empty diff result (no highlights)
+    assert.is_truthy(session.stored_diff_result, "Should have diff result")
+    assert.is_nil(session.stored_diff_result.changes, "Should have no changes (empty diff)")
+
+    vim.fn.delete(tmp_file)
+    cleanup_mock_session(tabpage)
+  end)
+
+  -- =========================================================================
+  -- Case 15: show_deleted_file closes modified, single-pane, no highlights
+  -- =========================================================================
+  it("Case 15: show_deleted_file — closes mod, single-pane, diff pane fills remainder", function()
+    local panel_width = 35
+    config.options.explorer = { position = "left", width = panel_width }
+
+    vim.cmd("tabnew")
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local orig_win = vim.api.nvim_get_current_win()
+    local orig_buf = vim.api.nvim_get_current_buf()
+    vim.cmd("vsplit")
+    local mod_win = vim.api.nvim_get_current_win()
+    local mod_buf = vim.api.nvim_get_current_buf()
+
+    local panel = create_panel_split("left", panel_width)
+
+    local session_mod = require("codediff.ui.lifecycle.session")
+    local state = require("codediff.ui.lifecycle.state")
+    session_mod.get_active_diffs()[tabpage] = {
+      mode = "explorer",
+      git_root = "/tmp",
+      original_path = "",
+      modified_path = "",
+      original_revision = nil,
+      modified_revision = nil,
+      original_bufnr = orig_buf,
+      modified_bufnr = mod_buf,
+      original_win = orig_win,
+      modified_win = mod_win,
+      explorer = panel,
+      stored_diff_result = {},
+      changedtick = { original = 0, modified = 0 },
+      mtime = { original = nil, modified = nil },
+      original_state = state.save_buffer_state(orig_buf),
+      modified_state = state.save_buffer_state(mod_buf),
+      suspended = false,
+    }
+    vim.w[orig_win].codediff_restore = 1
+    vim.w[mod_win].codediff_restore = 1
+
+    local side_by_side = require("codediff.ui.view.side_by_side")
+    side_by_side.show_deleted_file(tabpage, "/tmp", "test.txt", "/tmp/test.txt", "unstaged")
+
+    local session = session_mod.get_active_diffs()[tabpage]
+
+    -- Validate: single_pane set, modified window closed
+    assert.is_true(session.single_pane == true, "single_pane should be true")
+    assert.is_false(vim.api.nvim_win_is_valid(mod_win), "Modified window should be closed")
+    assert.is_true(vim.api.nvim_win_is_valid(orig_win), "Original window should be valid")
+
+    -- Validate: no diff highlights on the original buffer
+    local highlights = require("codediff.ui.highlights")
+    local hl_marks = vim.api.nvim_buf_get_extmarks(session.original_bufnr, highlights.ns_highlight, 0, -1, {})
+    assert.are.equal(0, #hl_marks, "No diff highlights should remain on original buffer")
+
+    -- Validate: layout
+    local panel_w = vim.api.nvim_win_get_width(panel.winid)
+    local orig_w = vim.api.nvim_win_get_width(orig_win)
+    assert.are.equal(panel_width, panel_w, "Panel should be configured width")
+    local expected_diff = vim.o.columns - panel_width - 1
+    assert_width_near(expected_diff, orig_w, "Diff pane should fill remainder:")
+
+    cleanup_mock_session(tabpage)
+  end)
+
+  -- =========================================================================
+  -- Case 16: show_added_virtual_file — closes orig, single-pane for "A" status
+  -- =========================================================================
+  it("Case 16: show_added_virtual_file — closes orig, single-pane, no highlights", function()
+    local panel_width = 35
+    config.options.explorer = { position = "left", width = panel_width }
+
+    vim.cmd("tabnew")
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local orig_win = vim.api.nvim_get_current_win()
+    local orig_buf = vim.api.nvim_get_current_buf()
+    vim.cmd("vsplit")
+    local mod_win = vim.api.nvim_get_current_win()
+    local mod_buf = vim.api.nvim_get_current_buf()
+
+    local panel = create_panel_split("left", panel_width)
+
+    local session_mod = require("codediff.ui.lifecycle.session")
+    local state = require("codediff.ui.lifecycle.state")
+    session_mod.get_active_diffs()[tabpage] = {
+      mode = "explorer",
+      git_root = "/tmp",
+      original_path = "",
+      modified_path = "",
+      original_revision = "abc123",
+      modified_revision = "def456",
+      original_bufnr = orig_buf,
+      modified_bufnr = mod_buf,
+      original_win = orig_win,
+      modified_win = mod_win,
+      explorer = panel,
+      stored_diff_result = {},
+      changedtick = { original = 0, modified = 0 },
+      mtime = { original = nil, modified = nil },
+      original_state = state.save_buffer_state(orig_buf),
+      modified_state = state.save_buffer_state(mod_buf),
+      suspended = false,
+    }
+    vim.w[orig_win].codediff_restore = 1
+    vim.w[mod_win].codediff_restore = 1
+
+    local side_by_side = require("codediff.ui.view.side_by_side")
+    -- Use a fake revision — the buffer load will fail gracefully, we're testing layout
+    side_by_side.show_added_virtual_file(tabpage, "/tmp", "added.txt", "def456")
+
+    local session = session_mod.get_active_diffs()[tabpage]
+
+    -- Validate: single_pane set, original window closed
+    assert.is_true(session.single_pane == true, "single_pane should be true")
+    assert.is_false(vim.api.nvim_win_is_valid(orig_win), "Original window should be closed")
+    assert.is_true(vim.api.nvim_win_is_valid(mod_win), "Modified window should be valid")
+
+    -- Validate: no diff highlights on modified buffer
+    local highlights = require("codediff.ui.highlights")
+    local hl_marks = vim.api.nvim_buf_get_extmarks(session.modified_bufnr, highlights.ns_highlight, 0, -1, {})
+    assert.are.equal(0, #hl_marks, "No diff highlights on modified buffer")
+
+    -- Validate: layout
+    local panel_w = vim.api.nvim_win_get_width(panel.winid)
+    local mod_w = vim.api.nvim_win_get_width(mod_win)
+    assert.are.equal(panel_width, panel_w, "Panel should be configured width")
+    local expected_diff = vim.o.columns - panel_width - 1
+    assert_width_near(expected_diff, mod_w, "Diff pane should fill remainder:")
+
+    -- Validate: empty diff result
+    assert.is_truthy(session.stored_diff_result, "Should have diff result")
+    assert.is_nil(session.stored_diff_result.changes, "Should have no changes")
+
+    cleanup_mock_session(tabpage)
+  end)
+
+  -- =========================================================================
+  -- Case 17: show_deleted_virtual_file — closes mod, single-pane for "D" in revision mode
+  -- =========================================================================
+  it("Case 17: show_deleted_virtual_file — closes mod, single-pane, no highlights", function()
+    local panel_width = 35
+    config.options.explorer = { position = "left", width = panel_width }
+
+    vim.cmd("tabnew")
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local orig_win = vim.api.nvim_get_current_win()
+    local orig_buf = vim.api.nvim_get_current_buf()
+    vim.cmd("vsplit")
+    local mod_win = vim.api.nvim_get_current_win()
+    local mod_buf = vim.api.nvim_get_current_buf()
+
+    local panel = create_panel_split("left", panel_width)
+
+    local session_mod = require("codediff.ui.lifecycle.session")
+    local state = require("codediff.ui.lifecycle.state")
+    session_mod.get_active_diffs()[tabpage] = {
+      mode = "explorer",
+      git_root = "/tmp",
+      original_path = "",
+      modified_path = "",
+      original_revision = "abc123",
+      modified_revision = "def456",
+      original_bufnr = orig_buf,
+      modified_bufnr = mod_buf,
+      original_win = orig_win,
+      modified_win = mod_win,
+      explorer = panel,
+      stored_diff_result = {},
+      changedtick = { original = 0, modified = 0 },
+      mtime = { original = nil, modified = nil },
+      original_state = state.save_buffer_state(orig_buf),
+      modified_state = state.save_buffer_state(mod_buf),
+      suspended = false,
+    }
+    vim.w[orig_win].codediff_restore = 1
+    vim.w[mod_win].codediff_restore = 1
+
+    local side_by_side = require("codediff.ui.view.side_by_side")
+    side_by_side.show_deleted_virtual_file(tabpage, "/tmp", "deleted.txt", "abc123")
+
+    local session = session_mod.get_active_diffs()[tabpage]
+
+    -- Validate: single_pane set, modified window closed
+    assert.is_true(session.single_pane == true, "single_pane should be true")
+    assert.is_false(vim.api.nvim_win_is_valid(mod_win), "Modified window should be closed")
+    assert.is_true(vim.api.nvim_win_is_valid(orig_win), "Original window should be valid")
+
+    -- Validate: no diff highlights
+    local highlights = require("codediff.ui.highlights")
+    local hl_marks = vim.api.nvim_buf_get_extmarks(session.original_bufnr, highlights.ns_highlight, 0, -1, {})
+    assert.are.equal(0, #hl_marks, "No diff highlights on original buffer")
+
+    -- Validate: layout
+    local panel_w = vim.api.nvim_win_get_width(panel.winid)
+    local orig_w = vim.api.nvim_win_get_width(orig_win)
+    assert.are.equal(panel_width, panel_w, "Panel should be configured width")
+    local expected_diff = vim.o.columns - panel_width - 1
+    assert_width_near(expected_diff, orig_w, "Diff pane should fill remainder:")
+
+    cleanup_mock_session(tabpage)
+  end)
+
+  -- =========================================================================
+  -- Case 18: Actually empty file should NOT trigger single-pane
+  -- =========================================================================
+  it("Case 18: Empty file content — both panes remain, no single-pane", function()
+    vim.cmd("tabnew")
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local orig_win = vim.api.nvim_get_current_win()
+    local orig_buf = vim.api.nvim_get_current_buf()
+    vim.cmd("vsplit")
+    local mod_win = vim.api.nvim_get_current_win()
+    local mod_buf = vim.api.nvim_get_current_buf()
+
+    -- Both buffers have empty content (simulating empty files)
+    vim.api.nvim_buf_set_lines(orig_buf, 0, -1, false, {""})
+    vim.api.nvim_buf_set_lines(mod_buf, 0, -1, false, {""})
+
+    create_mock_session(tabpage, {
+      original_win = orig_win,
+      modified_win = mod_win,
+      original_bufnr = orig_buf,
+      modified_bufnr = mod_buf,
+    })
+
+    layout.arrange(tabpage)
+
+    -- Both windows should remain valid and approximately equal
+    assert.is_true(vim.api.nvim_win_is_valid(orig_win), "Original window should be valid")
+    assert.is_true(vim.api.nvim_win_is_valid(mod_win), "Modified window should be valid")
+
+    local orig_w = vim.api.nvim_win_get_width(orig_win)
+    local mod_w = vim.api.nvim_win_get_width(mod_win)
+    assert_width_near(orig_w, mod_w, "Both panes should be equal width for empty files:")
+
+    local session = require("codediff.ui.lifecycle.session").get_active_diffs()[tabpage]
+    assert.is_nil(session.single_pane, "single_pane should NOT be set for empty files")
+
+    cleanup_mock_session(tabpage)
+  end)
 end)
