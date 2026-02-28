@@ -155,10 +155,10 @@ function M.setup_autocmds()
         local active_diffs = session.get_active_diffs()
         for tabpage, diff in pairs(active_diffs) do
           if diff.original_win == closed_win or diff.modified_win == closed_win then
-            -- If single_pane mode (untracked/deleted file), we expect only 1 diff window
-            local is_single_pane = diff.single_pane == true
+            -- single_pane/inline mode: we expect only 1 diff window
+            local is_single_window = diff.single_pane == true or diff.layout == "inline"
             local diff_win_count = count_diff_windows()
-            local threshold = is_single_pane and 0 or 1
+            local threshold = is_single_window and 0 or 1
             if diff_win_count <= threshold then
               cleanup_diff(tabpage)
             end
@@ -199,8 +199,8 @@ function M.setup_autocmds()
 
       if diff then
         local diff_win_count = count_diff_windows()
-        local is_single_pane = diff.single_pane == true
-        local threshold = is_single_pane and 0 or 1
+        local is_single_window = diff.single_pane == true or diff.layout == "inline"
+        local threshold = is_single_window and 0 or 1
         if diff_win_count <= threshold then
           cleanup_diff(current_tab)
         end

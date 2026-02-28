@@ -11,9 +11,10 @@ local navigation = require("codediff.ui.view.navigation")
 function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explorer_mode)
   local keymaps = config.options.keymaps.view
 
-  -- Check if this is history mode
+  -- Check mode context
   local session = lifecycle.get_session(tabpage)
   local is_history_mode = session and session.mode == "history"
+  local is_inline = session and session.layout == "inline"
 
   -- Helper: Quit diff view
   local function quit_diff()
@@ -66,7 +67,8 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     end
 
     local current_buf = vim.api.nvim_get_current_buf()
-    local is_original = current_buf == original_bufnr
+    -- In inline mode, always use modified ranges
+    local is_original = not is_inline and current_buf == original_bufnr
     local cursor = vim.api.nvim_win_get_cursor(0)
     local current_line = cursor[1]
 
@@ -92,6 +94,27 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
       return
     end
 
+    if is_inline then
+      -- Inline mode: revert modified lines to original
+      if not vim.bo[modified_bufnr].modifiable then
+        vim.notify("Buffer is not modifiable", vim.log.levels.WARN)
+        return
+      end
+
+      local hunk, hunk_idx = find_hunk_at_cursor()
+      if not hunk then
+        vim.notify("No hunk at cursor position", vim.log.levels.WARN)
+        return
+      end
+
+      local orig_lines = vim.api.nvim_buf_get_lines(original_bufnr, hunk.original.start_line - 1, hunk.original.end_line - 1, false)
+      vim.api.nvim_buf_set_lines(modified_bufnr, hunk.modified.start_line - 1, hunk.modified.end_line - 1, false, orig_lines)
+      auto_refresh.trigger(modified_bufnr)
+      vim.api.nvim_echo({ { string.format("Reverted hunk %d", hunk_idx), "None" } }, false, {})
+      return
+    end
+
+    -- Side-by-side mode: copy from other buffer to current
     local current_buf = vim.api.nvim_get_current_buf()
     local is_original = current_buf == original_bufnr
     local target_buf = current_buf
@@ -132,6 +155,13 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
       return
     end
 
+    if is_inline then
+      -- Inline mode: buffer already has modified content, dp is a no-op
+      vim.notify("Buffer already contains the modified version. Use 'do' to revert to original.", vim.log.levels.INFO)
+      return
+    end
+
+    -- Side-by-side mode: copy from current buffer to other
     local current_buf = vim.api.nvim_get_current_buf()
     local is_original = current_buf == original_bufnr
     local source_buf = current_buf
@@ -611,12 +641,14 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.focus_explorer, focus_explorer, { desc = "Focus explorer panel" })
   end
 
-  -- Diff get/put (do, dp) - like vimdiff
+  -- Diff get/put (do, dp) - layout-aware semantics
   if keymaps.diff_get then
-    lifecycle.set_tab_keymap(tabpage, "n", keymaps.diff_get, diff_get, { desc = "Get change from other buffer" })
+    local desc = is_inline and "Revert hunk to original" or "Get change from other buffer"
+    lifecycle.set_tab_keymap(tabpage, "n", keymaps.diff_get, diff_get, { desc = desc })
   end
   if keymaps.diff_put then
-    lifecycle.set_tab_keymap(tabpage, "n", keymaps.diff_put, diff_put, { desc = "Put change to other buffer" })
+    local desc = is_inline and "Accept change (no-op in inline)" or "Put change to other buffer"
+    lifecycle.set_tab_keymap(tabpage, "n", keymaps.diff_put, diff_put, { desc = desc })
   end
   if keymaps.open_in_prev_tab then
     lifecycle.set_tab_keymap(tabpage, "n", keymaps.open_in_prev_tab, open_in_prev_tab, { desc = "Open buffer in previous tab" })
@@ -705,5 +737,6 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     end
   end
 end
+
 
 return M

@@ -2,10 +2,17 @@
 local M = {}
 
 local lifecycle = require("codediff.ui.lifecycle")
+local config = require("codediff.config")
 local side_by_side = require("codediff.ui.view.side_by_side")
 
 -- Once-guard: register lifecycle autocmds on first view creation
 local lifecycle_initialized = false
+
+-- Resolve effective layout: conflict always uses side-by-side
+local function get_layout(session_config)
+  if session_config.conflict then return "side-by-side" end
+  return config.options.diff.layout
+end
 
 ---@class SessionConfig
 ---@field mode "standalone"|"explorer"|"history"
@@ -30,7 +37,10 @@ function M.create(session_config, filetype, on_ready)
     lifecycle_initialized = true
   end
 
-  -- All modes currently use side-by-side engine
+  if get_layout(session_config) == "inline" then
+    return require("codediff.ui.view.inline_view").create(session_config, filetype, on_ready)
+  end
+
   return side_by_side.create(session_config, filetype, on_ready)
 end
 
@@ -40,7 +50,12 @@ end
 ---@param auto_scroll_to_first_hunk boolean? Whether to auto-scroll to first hunk (default: false)
 ---@return boolean success Whether update succeeded
 function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
-  -- All modes currently use side-by-side engine
+  -- Route based on existing session layout (not config — session may differ)
+  local session = lifecycle.get_session(tabpage)
+  if session and session.layout == "inline" and not session_config.conflict then
+    return require("codediff.ui.view.inline_view").update(tabpage, session_config, auto_scroll_to_first_hunk)
+  end
+
   return side_by_side.update(tabpage, session_config, auto_scroll_to_first_hunk)
 end
 

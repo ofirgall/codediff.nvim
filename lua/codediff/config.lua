@@ -29,6 +29,7 @@ M.defaults = {
 
   -- Diff view behavior
   diff = {
+    layout = "inline", -- Diff layout: "side-by-side" or "inline"
     disable_inlay_hints = true, -- Disable inlay hints in diff windows for cleaner view
     max_computation_time_ms = 5000, -- Maximum time for diff computation (5 seconds, VSCode default)
     ignore_trim_whitespace = false, -- Ignore leading/trailing whitespace changes (like diffopt+=iwhite)

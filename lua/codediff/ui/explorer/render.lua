@@ -188,51 +188,66 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
     -- Handle untracked files: show file without diff
     if file_data.status == "??" then
       vim.schedule(function()
-        local side_by_side = require("codediff.ui.view.side_by_side")
-        side_by_side.show_untracked_file(tabpage, abs_path)
+        local sess = lifecycle.get_session(tabpage)
+        if sess and sess.layout == "inline" then
+          require("codediff.ui.view.inline_view").show_single_file(tabpage, abs_path)
+        else
+          require("codediff.ui.view.side_by_side").show_untracked_file(tabpage, abs_path)
+        end
       end)
       return
     end
 
     -- Handle added files: only one side has the file
     if file_data.status == "A" then
-      if base_revision and target_revision and target_revision ~= "WORKING" then
-        -- Two-revision mode: show target revision content only
-        vim.schedule(function()
-          local side_by_side = require("codediff.ui.view.side_by_side")
-          side_by_side.show_added_virtual_file(tabpage, git_root, file_path, target_revision)
-        end)
-      elseif group == "staged" then
-        -- Staged mode: file exists in staging (:0) but not in HEAD
-        vim.schedule(function()
-          local side_by_side = require("codediff.ui.view.side_by_side")
-          side_by_side.show_added_virtual_file(tabpage, git_root, file_path, ":0")
-        end)
-      else
-        -- Unstaged/working tree: file exists on disk but not in any revision
-        vim.schedule(function()
-          local side_by_side = require("codediff.ui.view.side_by_side")
-          side_by_side.show_untracked_file(tabpage, abs_path)
-        end)
-      end
+      vim.schedule(function()
+        local sess = lifecycle.get_session(tabpage)
+        local is_inline = sess and sess.layout == "inline"
+
+        if base_revision and target_revision and target_revision ~= "WORKING" then
+          if is_inline then
+            require("codediff.ui.view.inline_view").show_single_file(tabpage, file_path, { revision = target_revision, git_root = git_root, rel_path = file_path })
+          else
+            require("codediff.ui.view.side_by_side").show_added_virtual_file(tabpage, git_root, file_path, target_revision)
+          end
+        elseif group == "staged" then
+          if is_inline then
+            require("codediff.ui.view.inline_view").show_single_file(tabpage, file_path, { revision = ":0", git_root = git_root, rel_path = file_path })
+          else
+            require("codediff.ui.view.side_by_side").show_added_virtual_file(tabpage, git_root, file_path, ":0")
+          end
+        else
+          if is_inline then
+            require("codediff.ui.view.inline_view").show_single_file(tabpage, abs_path)
+          else
+            require("codediff.ui.view.side_by_side").show_untracked_file(tabpage, abs_path)
+          end
+        end
+      end)
       return
     end
 
     -- Handle deleted files: show old content without diff
     if file_data.status == "D" then
-      if base_revision and target_revision and target_revision ~= "WORKING" then
-        -- Two-revision mode: use base_revision
-        vim.schedule(function()
-          local side_by_side = require("codediff.ui.view.side_by_side")
-          side_by_side.show_deleted_virtual_file(tabpage, git_root, file_path, base_revision)
-        end)
-      else
-        -- Working tree mode: use staged or HEAD
-        vim.schedule(function()
-          local side_by_side = require("codediff.ui.view.side_by_side")
-          side_by_side.show_deleted_file(tabpage, git_root, file_path, abs_path, group)
-        end)
-      end
+      vim.schedule(function()
+        local sess = lifecycle.get_session(tabpage)
+        local is_inline = sess and sess.layout == "inline"
+
+        if base_revision and target_revision and target_revision ~= "WORKING" then
+          if is_inline then
+            require("codediff.ui.view.inline_view").show_single_file(tabpage, file_path, { revision = base_revision, git_root = git_root, rel_path = file_path })
+          else
+            require("codediff.ui.view.side_by_side").show_deleted_virtual_file(tabpage, git_root, file_path, base_revision)
+          end
+        else
+          if is_inline then
+            local revision = (group == "staged") and "HEAD" or ":0"
+            require("codediff.ui.view.inline_view").show_single_file(tabpage, file_path, { revision = revision, git_root = git_root, rel_path = file_path })
+          else
+            require("codediff.ui.view.side_by_side").show_deleted_file(tabpage, git_root, file_path, abs_path, group)
+          end
+        end
+      end)
       return
     end
 
