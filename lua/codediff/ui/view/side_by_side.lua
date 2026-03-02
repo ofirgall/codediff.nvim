@@ -168,6 +168,15 @@ function M.create(session_config, filetype, on_ready)
         return
       end
 
+      -- Ensure correct tab context — when called from vim.schedule in a batch
+      -- loop, the current tab may differ. Commands like syncbind operate on the
+      -- current tab, so we must switch to the target tab first.
+      local target_tab = vim.api.nvim_win_get_tabpage(modified_win)
+      local cur_tab = vim.api.nvim_get_current_tabpage()
+      if cur_tab ~= target_tab then
+        vim.api.nvim_set_current_tabpage(target_tab)
+      end
+
       -- Always read from buffers (single source of truth)
       local original_lines = vim.api.nvim_buf_get_lines(original_info.bufnr, 0, -1, false)
       local modified_lines = vim.api.nvim_buf_get_lines(modified_info.bufnr, 0, -1, false)
