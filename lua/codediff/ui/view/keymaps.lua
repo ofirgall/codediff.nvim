@@ -683,10 +683,12 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
 
   -- Help keymap (g?) - show floating window with available keymaps
   if keymaps.show_help then
-    local help = require("codediff.ui.keymap_help")
-    lifecycle.set_tab_keymap(tabpage, "n", keymaps.show_help, function()
-      help.toggle(tabpage)
-    end, { desc = "Show keymap help" })
+    local ok, help = pcall(require, "codediff.ui.keymap_help")
+    if ok and help then
+      lifecycle.set_tab_keymap(tabpage, "n", keymaps.show_help, function()
+        help.toggle(tabpage)
+      end, { desc = "Show keymap help" })
+    end
   end
 
   -- File navigation (]f, [f) - works in both explorer and history mode
