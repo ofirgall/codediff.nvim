@@ -40,12 +40,10 @@ describe("Welcome Page", function()
       -- Buffer should contain the logo
       local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
       local content = table.concat(lines, "\n")
-      assert.is_true(content:find("CODEDIFF") ~= nil or content:find("██") ~= nil,
-        "Buffer should contain logo text")
+      assert.is_true(content:find("CODEDIFF") ~= nil or content:find("██") ~= nil, "Buffer should contain logo text")
 
       -- Buffer should contain hint text
-      assert.is_true(content:find("Working tree is clean") ~= nil,
-        "Buffer should contain hint message")
+      assert.is_true(content:find("Working tree is clean") ~= nil, "Buffer should contain hint message")
     end)
 
     it("is_welcome_buffer returns true for welcome buffers", function()
@@ -94,12 +92,72 @@ describe("Welcome Page", function()
         if line:find("██") then
           found_logo = true
           -- Should have leading spaces for centering
-          assert.is_true(line:match("^%s") ~= nil,
-            "Logo line should have leading spaces for centering")
+          assert.is_true(line:match("^%s") ~= nil, "Logo line should have leading spaces for centering")
           break
         end
       end
       assert.is_true(found_logo, "Should find logo in buffer")
+    end)
+
+    it("welcome window override is saved and restored per window", function()
+      local lifecycle = require("codediff.ui.lifecycle")
+      local welcome_window = require("codediff.ui.view.welcome_window")
+      local tabpage = vim.api.nvim_get_current_tabpage()
+      local main_win = vim.api.nvim_get_current_win()
+      local regular_buf = vim.api.nvim_create_buf(false, true)
+      local other_buf = vim.api.nvim_create_buf(false, true)
+      local welcome_buf = welcome.create_buffer(80, 24)
+
+      vim.wo[main_win].number = true
+      vim.wo[main_win].relativenumber = true
+      vim.wo[main_win].signcolumn = "yes:1"
+      vim.wo[main_win].foldcolumn = "2"
+      vim.wo[main_win].statuscolumn = "%l"
+
+      vim.cmd("vsplit")
+      local other_win = vim.api.nvim_get_current_win()
+      vim.wo[other_win].number = true
+      vim.wo[other_win].relativenumber = false
+      vim.wo[other_win].signcolumn = "yes"
+      vim.wo[other_win].statuscolumn = "%=%l"
+
+      lifecycle.create_session(tabpage, "standalone", nil, "", "", nil, nil, regular_buf, other_buf, main_win, other_win, {}, nil)
+      vim.api.nvim_set_current_win(main_win)
+
+      vim.api.nvim_win_set_buf(main_win, welcome_buf)
+      welcome_window.sync(main_win)
+
+      assert.is_false(vim.wo[main_win].number)
+      assert.is_false(vim.wo[main_win].relativenumber)
+      assert.equals("no", vim.wo[main_win].signcolumn)
+      assert.equals("0", vim.wo[main_win].foldcolumn)
+      assert.equals(" ", vim.wo[main_win].statuscolumn)
+
+      assert.is_true(vim.wo[other_win].number)
+      assert.is_false(vim.wo[other_win].relativenumber)
+      assert.equals("yes", vim.wo[other_win].signcolumn)
+      assert.equals("%=%l", vim.wo[other_win].statuscolumn)
+
+      vim.api.nvim_win_set_buf(main_win, regular_buf)
+      welcome_window.sync(main_win)
+
+      assert.is_true(vim.wo[main_win].number)
+      assert.is_true(vim.wo[main_win].relativenumber)
+      assert.equals("yes:1", vim.wo[main_win].signcolumn)
+      assert.equals("2", vim.wo[main_win].foldcolumn)
+      assert.equals("%l", vim.wo[main_win].statuscolumn)
+
+      lifecycle.cleanup(tabpage)
+      vim.api.nvim_set_current_win(main_win)
+      if vim.api.nvim_win_is_valid(other_win) then
+        vim.api.nvim_win_close(other_win, true)
+      end
+      if vim.api.nvim_buf_is_valid(regular_buf) then
+        vim.api.nvim_buf_delete(regular_buf, { force = true })
+      end
+      if vim.api.nvim_buf_is_valid(other_buf) then
+        vim.api.nvim_buf_delete(other_buf, { force = true })
+      end
     end)
   end)
 
@@ -156,13 +214,21 @@ describe("Welcome Page", function()
             break
           end
         end
-        if not tabpage then return false end
+        if not tabpage then
+          return false
+        end
         local session = lifecycle.get_session(tabpage)
-        if not session then return false end
-        if not session.explorer then return false end
+        if not session then
+          return false
+        end
+        if not session.explorer then
+          return false
+        end
         -- Wait for diff to render (buffers loaded)
         local orig_buf, mod_buf = lifecycle.get_buffers(tabpage)
-        if not orig_buf or not mod_buf then return false end
+        if not orig_buf or not mod_buf then
+          return false
+        end
         return vim.api.nvim_buf_is_valid(orig_buf) and vim.api.nvim_buf_is_valid(mod_buf)
       end, 100)
 
@@ -178,6 +244,12 @@ describe("Welcome Page", function()
       assert.is_true(vim.api.nvim_win_is_valid(orig_win), "Original window should be valid")
       assert.is_true(vim.api.nvim_win_is_valid(mod_win), "Modified window should be valid")
 
+      vim.wo[mod_win].number = true
+      vim.wo[mod_win].relativenumber = true
+      vim.wo[mod_win].signcolumn = "yes:1"
+      vim.wo[mod_win].foldcolumn = "2"
+      vim.wo[mod_win].statuscolumn = "%l"
+
       -- Discard changes: run git checkout
       vim.fn.system("git -C " .. vim.fn.shellescape(repo.dir) .. " checkout -- test.txt")
 
@@ -190,7 +262,9 @@ describe("Welcome Page", function()
       local welcome = require("codediff.ui.welcome")
       local welcome_appeared = vim.wait(10000, function()
         local s = lifecycle.get_session(tabpage)
-        if not s then return false end
+        if not s then
+          return false
+        end
         return welcome.is_welcome_buffer(s.modified_bufnr)
       end, 100)
 
@@ -199,6 +273,11 @@ describe("Welcome Page", function()
       -- Verify welcome state
       session = lifecycle.get_session(tabpage)
       assert.is_true(session.single_pane == true, "Session should be in single_pane mode")
+      assert.is_false(vim.wo[session.modified_win].number)
+      assert.is_false(vim.wo[session.modified_win].relativenumber)
+      assert.equals("no", vim.wo[session.modified_win].signcolumn)
+      assert.equals("0", vim.wo[session.modified_win].foldcolumn)
+      assert.equals(" ", vim.wo[session.modified_win].statuscolumn)
 
       -- Restore changes: modify the file again
       repo.write_file("test.txt", { "line 1", "line 2 changed again" })
@@ -217,8 +296,7 @@ describe("Welcome Page", function()
 
       -- Verify NO auto-select: diff panes still show welcome content
       session = lifecycle.get_session(tabpage)
-      assert.is_true(welcome.is_welcome_buffer(session.modified_bufnr),
-        "Welcome buffer should still be shown (no auto-select on refresh)")
+      assert.is_true(welcome.is_welcome_buffer(session.modified_bufnr), "Welcome buffer should still be shown (no auto-select on refresh)")
 
       -- Simulate user click: select the file
       explorer.on_file_select({
@@ -231,19 +309,26 @@ describe("Welcome Page", function()
       -- Wait for diff to restore
       local diff_restored = vim.wait(10000, function()
         local s = lifecycle.get_session(tabpage)
-        if not s then return false end
+        if not s then
+          return false
+        end
         -- single_pane should be cleared and both windows valid
-        if s.single_pane then return false end
-        return vim.api.nvim_win_is_valid(s.original_win)
-          and vim.api.nvim_win_is_valid(s.modified_win)
+        if s.single_pane then
+          return false
+        end
+        return vim.api.nvim_win_is_valid(s.original_win) and vim.api.nvim_win_is_valid(s.modified_win)
       end, 100)
 
       assert.is_true(diff_restored, "Diff should be restored after file select")
 
       -- Verify diff content is visible
       session = lifecycle.get_session(tabpage)
-      assert.is_false(welcome.is_welcome_buffer(session.modified_bufnr),
-        "Welcome buffer should be replaced with diff content")
+      assert.is_false(welcome.is_welcome_buffer(session.modified_bufnr), "Welcome buffer should be replaced with diff content")
+      assert.is_true(vim.wo[session.modified_win].number)
+      assert.is_true(vim.wo[session.modified_win].relativenumber)
+      assert.equals("yes:1", vim.wo[session.modified_win].signcolumn)
+      assert.equals("2", vim.wo[session.modified_win].foldcolumn)
+      assert.equals("%l", vim.wo[session.modified_win].statuscolumn)
     end)
   end)
 end)

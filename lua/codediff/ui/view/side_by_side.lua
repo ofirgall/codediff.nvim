@@ -18,6 +18,7 @@ local render = require("codediff.ui.view.render")
 local view_keymaps = require("codediff.ui.view.keymaps")
 local conflict_window = require("codediff.ui.view.conflict_window")
 local panel = require("codediff.ui.view.panel")
+local welcome_window = require("codediff.ui.view.welcome_window")
 
 local is_virtual_revision = helpers.is_virtual_revision
 local prepare_buffer = helpers.prepare_buffer
@@ -72,6 +73,8 @@ function M.create(session_config, filetype, on_ready)
     pcall(vim.api.nvim_buf_set_name, mod_scratch, "CodeDiff " .. tabpage .. ".2")
     vim.api.nvim_win_set_buf(original_win, orig_scratch)
     vim.api.nvim_win_set_buf(modified_win, mod_scratch)
+    welcome_window.sync(original_win)
+    welcome_window.sync(modified_win)
 
     -- Create placeholder buffer info (will be updated by explorer)
     original_info = { bufnr = orig_scratch }
@@ -107,6 +110,8 @@ function M.create(session_config, filetype, on_ready)
     else
       vim.api.nvim_win_set_buf(modified_win, modified_info.bufnr)
     end
+    welcome_window.sync(original_win)
+    welcome_window.sync(modified_win)
   end
 
   -- Clean up initial buffer
@@ -662,6 +667,9 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
     end
   end
 
+  welcome_window.sync(original_win)
+  welcome_window.sync(modified_win)
+
   -- Update lifecycle session metadata
   lifecycle.update_paths(tabpage, session_config.original_path, session_config.modified_path)
 
@@ -729,6 +737,7 @@ local function show_single_file(tabpage, opts)
   -- Load the file into the kept window
   if keep_win and vim.api.nvim_win_is_valid(keep_win) then
     vim.api.nvim_win_set_buf(keep_win, opts.load_bufnr)
+    welcome_window.sync(keep_win)
 
     -- Create a scratch buffer as placeholder for the empty side
     local empty_buf = vim.api.nvim_create_buf(false, true)
@@ -747,6 +756,9 @@ local function show_single_file(tabpage, opts)
   end
 
   layout.arrange(tabpage)
+  if keep_win and vim.api.nvim_win_is_valid(keep_win) then
+    welcome_window.sync_later(keep_win)
+  end
 end
 
 -- Load a real file from disk, return bufnr

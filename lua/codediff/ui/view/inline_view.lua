@@ -9,6 +9,7 @@ local diff_module = require("codediff.core.diff")
 local inline = require("codediff.ui.inline")
 local semantic = require("codediff.ui.semantic_tokens")
 local layout = require("codediff.ui.layout")
+local welcome_window = require("codediff.ui.view.welcome_window")
 
 local helpers = require("codediff.ui.view.helpers")
 local panel = require("codediff.ui.view.panel")
@@ -105,6 +106,7 @@ function M.create(session_config, filetype, on_ready)
     vim.bo[mod_scratch].buftype = "nofile"
     pcall(vim.api.nvim_buf_set_name, mod_scratch, "CodeDiff " .. tabpage .. ".inline")
     vim.api.nvim_win_set_buf(modified_win, mod_scratch)
+    welcome_window.sync(modified_win)
 
     local orig_scratch = vim.api.nvim_create_buf(false, true)
     vim.bo[orig_scratch].buftype = "nofile"
@@ -171,6 +173,7 @@ function M.create(session_config, filetype, on_ready)
   else
     vim.api.nvim_win_set_buf(modified_win, modified_info.bufnr)
   end
+  welcome_window.sync(modified_win)
 
   -- Load original buffer (hidden — never displayed in a window)
   if original_is_virtual and original_info.needs_edit then
@@ -378,6 +381,7 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
     end
     vim.api.nvim_win_set_buf(modified_win, mod_buf)
   end
+  welcome_window.sync(modified_win)
 
   local should_auto_scroll = auto_scroll_to_first_hunk == true
 
@@ -551,6 +555,7 @@ function M.show_single_file(tabpage, file_path, opts)
     file_bufnr = vim.api.nvim_create_buf(false, true)
     vim.bo[file_bufnr].buftype = "nofile"
     vim.api.nvim_win_set_buf(mod_win, file_bufnr)
+    welcome_window.sync(mod_win)
     local ft = vim.filetype.match({ filename = opts.rel_path or file_path })
     if ft then
       vim.bo[file_bufnr].filetype = ft
@@ -575,6 +580,7 @@ function M.show_single_file(tabpage, file_path, opts)
     file_bufnr = vim.fn.bufadd(file_path)
     vim.fn.bufload(file_bufnr)
     vim.api.nvim_win_set_buf(mod_win, file_bufnr)
+    welcome_window.sync(mod_win)
   end
 
   -- Update session state
@@ -588,6 +594,7 @@ function M.show_single_file(tabpage, file_path, opts)
 
   local view_keymaps = require("codediff.ui.view.keymaps")
   view_keymaps.setup_all_keymaps(tabpage, empty_buf, file_bufnr, true)
+  welcome_window.sync_later(mod_win)
 end
 
 --- Show the welcome page in the inline diff window
@@ -610,6 +617,7 @@ function M.show_welcome(tabpage, load_bufnr)
   end
 
   vim.api.nvim_win_set_buf(mod_win, load_bufnr)
+  welcome_window.sync(mod_win)
 
   local empty_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[empty_buf].buftype = "nofile"
@@ -621,6 +629,7 @@ function M.show_welcome(tabpage, load_bufnr)
 
   local view_keymaps = require("codediff.ui.view.keymaps")
   view_keymaps.setup_all_keymaps(tabpage, empty_buf, load_bufnr, true)
+  welcome_window.sync_later(mod_win)
 end
 
 return M

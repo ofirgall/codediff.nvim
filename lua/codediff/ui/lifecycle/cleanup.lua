@@ -4,6 +4,7 @@ local M = {}
 local accessors = require("codediff.ui.lifecycle.accessors")
 local session = require("codediff.ui.lifecycle.session")
 local state = require("codediff.ui.lifecycle.state")
+local welcome_window = require("codediff.ui.view.welcome_window")
 
 -- Autocmd group for cleanup
 local augroup = vim.api.nvim_create_augroup("codediff_lifecycle", { clear = true })
@@ -92,9 +93,11 @@ local function cleanup_diff(tabpage)
 
   -- Clear window variables if windows still exist
   if vim.api.nvim_win_is_valid(diff.original_win) then
+    welcome_window.apply_normal(diff.original_win)
     vim.w[diff.original_win].codediff_restore = nil
   end
   if vim.api.nvim_win_is_valid(diff.modified_win) then
+    welcome_window.apply_normal(diff.modified_win)
     vim.w[diff.modified_win].codediff_restore = nil
   end
 
