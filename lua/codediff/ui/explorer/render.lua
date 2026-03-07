@@ -331,8 +331,27 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
         local current_is_staged = session.modified_revision == ":0"
 
         if is_staged_diff == current_is_staged then
-          -- Same file AND same diff type, skip update
-          return
+          -- Same diff type — but also check if comparison base changed
+          -- (e.g. unstaged file gains staged changes: HEAD → :0)
+          if group ~= "staged" then
+            local current_status = explorer.status_result
+            if current_status then
+              local file_has_staged = false
+              for _, sf in ipairs(current_status.staged or {}) do
+                if sf.path == file_path then file_has_staged = true; break end
+              end
+              local current_is_mutable = session.original_revision and session.original_revision:match("^:[0-3]$")
+              if file_has_staged ~= (current_is_mutable and true or false) then
+                -- Comparison base needs to change — don't skip
+              else
+                return
+              end
+            else
+              return
+            end
+          else
+            return
+          end
         end
       end
     end

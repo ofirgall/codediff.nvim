@@ -1,13 +1,8 @@
--- Test: Stale buffer after git operations in explorer mode
--- Validates that diff panes update after stage, unstage, commit, and stash.
+-- Test: Welcome page after git operations (commit, stash)
+-- Validates that diff panes show welcome page when all changes are resolved.
 --
--- The bug: process_result() in refresh.lua rebuilds the explorer tree but
--- never calls on_file_select to update the diff panes. After any git
--- operation (stage, unstage, commit, stash) the diff panes show stale
--- content from the *previous* state.
---
--- These tests are written TDD-style — they should FAIL until the fix
--- is implemented in refresh.lua.
+-- Staging/unstaging E2E tests are in hunk_operations_spec.lua (keymap-driven).
+-- These tests cover commit and stash operations that remove files from the tree.
 
 local h = dofile("tests/helpers.lua")
 
@@ -107,7 +102,7 @@ local function file_exists_in_tree(explorer, path)
 end
 
 -- ============================================================================
-describe("Stale Buffer After Git Operations", function()
+describe("Welcome Page After Git Operations", function()
   local repo
   local original_cwd
 
@@ -146,135 +141,7 @@ describe("Stale Buffer After Git Operations", function()
   end)
 
   -- --------------------------------------------------------------------------
-  -- Test 1: Staging the currently viewed file should update diff panes
-  -- --------------------------------------------------------------------------
-  it("updates diff panes when current file is staged", function()
-    local tabpage, session, explorer = open_codediff_and_wait(repo)
-    local lifecycle = require("codediff.ui.lifecycle")
-
-    -- Precondition: file1.txt should be in unstaged with working-tree diff
-    assert.equals("unstaged", explorer.current_file_group, "Initial file should be in unstaged group")
-    assert.equals("file1.txt", explorer.current_file_path, "Initial file should be file1.txt")
-
-    -- The modified side should show the working copy (modified_revision == nil or "WORKING")
-    session = lifecycle.get_session(tabpage)
-    local pre_mod_rev = session.modified_revision
-    assert.is_true(pre_mod_rev == nil or pre_mod_rev == "WORKING", "Before staging: modified_revision should be nil/WORKING, got: " .. tostring(pre_mod_rev))
-
-    -- Stage file1.txt
-    repo.git("add file1.txt")
-
-    -- Refresh and wait for async completion
-    refresh_and_wait(explorer)
-
-    -- After staging, the file should have moved to the staged group
-    -- and the diff panes should reflect the staged comparison (HEAD vs :0)
-    session = lifecycle.get_session(tabpage)
-    assert.equals("staged", explorer.current_file_group, "After staging: file should move to staged group")
-    assert.equals(":0", session.modified_revision, "After staging: modified_revision should be :0 (staged index)")
-  end)
-
-  -- --------------------------------------------------------------------------
-  -- Test 2: Unstaging the currently viewed file should update diff panes
-  -- --------------------------------------------------------------------------
-  it("updates diff panes when current file is unstaged", function()
-    -- First stage file1.txt so it starts in the staged group
-    repo.git("add file1.txt")
-
-    local tabpage, session, explorer = open_codediff_and_wait(repo)
-    local lifecycle = require("codediff.ui.lifecycle")
-
-    -- file2.txt is still unstaged, so auto-select picks it first.
-    -- Explicitly select file1 in staged. The wrapper sets
-    -- explorer.current_file_group synchronously.
-    explorer.on_file_select({
-      path = "file1.txt",
-      status = "M",
-      git_root = repo.dir,
-      group = "staged",
-    })
-    -- Give the async view.update chain time to settle
-    vim.wait(3000, function()
-      return false
-    end, 50)
-
-    -- Precondition: the synchronous tracker should reflect staged
-    assert.equals("staged", explorer.current_file_group, "Precondition: should be viewing staged file1")
-    assert.equals("file1.txt", explorer.current_file_path, "Precondition: should be viewing file1.txt")
-
-    -- Unstage file1.txt
-    repo.git("reset HEAD file1.txt")
-
-    refresh_and_wait(explorer)
-
-    -- After unstaging, the file should be back in the unstaged group
-    -- and the diff panes should be re-selected with the new group.
-    assert.equals("unstaged", explorer.current_file_group, "After unstaging: file should move to unstaged group")
-
-    -- Also check that the session revision was updated
-    session = lifecycle.get_session(tabpage)
-    local post_mod_rev = session.modified_revision
-    assert.is_true(post_mod_rev == nil or post_mod_rev == "WORKING", "After unstaging: modified_revision should be nil/WORKING, got: " .. tostring(post_mod_rev))
-  end)
-
-  -- --------------------------------------------------------------------------
-  -- Test 3: File in both groups (stage, then modify again) — re-staging
-  -- --------------------------------------------------------------------------
-  it("updates diff panes when file exists in both groups and is re-staged", function()
-    -- Stage file1.txt (original change)
-    repo.git("add file1.txt")
-    -- Modify file1.txt again → now appears in BOTH unstaged and staged
-    repo.write_file("file1.txt", { "line1", "re-modified line2", "line3" })
-
-    local tabpage, session, explorer = open_codediff_and_wait(repo)
-    local lifecycle = require("codediff.ui.lifecycle")
-
-    -- Select file1 in unstaged group
-    explorer.on_file_select({
-      path = "file1.txt",
-      status = "M",
-      git_root = repo.dir,
-      group = "unstaged",
-    })
-    vim.wait(3000, function()
-      return false
-    end, 50)
-
-    assert.equals("unstaged", explorer.current_file_group, "Precondition: should be viewing unstaged file1")
-
-    -- Stage the new changes too (git add merges into staged)
-    repo.git("add file1.txt")
-
-    refresh_and_wait(explorer)
-
-    -- File should now be in staged only, diff panes updated
-    session = lifecycle.get_session(tabpage)
-    assert.equals("staged", explorer.current_file_group, "After re-staging: file should move to staged group")
-    assert.equals(":0", session.modified_revision, "After re-staging: modified_revision should be :0")
-  end)
-
-  -- --------------------------------------------------------------------------
-  -- Test 4: Stage all hunks — file moves from unstaged to staged only
-  -- --------------------------------------------------------------------------
-  it("moves file to staged group after staging all hunks", function()
-    local tabpage, session, explorer = open_codediff_and_wait(repo)
-    local lifecycle = require("codediff.ui.lifecycle")
-
-    -- Precondition: viewing file1.txt in unstaged
-    assert.equals("unstaged", explorer.current_file_group, "Precondition: file should be unstaged")
-
-    -- Stage file1.txt
-    repo.git("add file1.txt")
-
-    refresh_and_wait(explorer)
-
-    session = lifecycle.get_session(tabpage)
-    assert.equals("staged", explorer.current_file_group, "After staging: current_file_group should be staged")
-    assert.equals(":0", session.modified_revision, "After staging: diff panes should show staged comparison (modified_revision = :0)")
-  end)
-
-  -- --------------------------------------------------------------------------
-  -- Test 5: Commit current file — others remain, welcome if empty
+  -- Test: Commit current file — others remain, welcome if empty
   -- --------------------------------------------------------------------------
   it("shows welcome or next file when current file is committed", function()
     local tabpage, session, explorer = open_codediff_and_wait(repo)

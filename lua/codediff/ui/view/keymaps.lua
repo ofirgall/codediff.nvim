@@ -429,58 +429,13 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
 
     local patch = build_hunk_patch(file_path, orig_lines, mod_lines, hunk.original.start_line, hunk.modified.start_line)
 
-    -- Capture hunk count before async call (stored_diff_result may change)
-    local total_hunks = session.stored_diff_result and #session.stored_diff_result.changes or 0
-    local is_unstaged_view = session.modified_revision == nil
-
     local git = require("codediff.core.git")
     git.apply_patch(session.git_root, patch, false, function(err)
       if err then
         vim.notify("Failed to stage hunk: " .. err, vim.log.levels.ERROR)
         return
       end
-
-      -- Refresh explorer to reflect staging change
-      local explorer_obj = lifecycle.get_explorer(tabpage)
-      if explorer_obj then
-        local explorer = require("codediff.ui.explorer")
-        explorer.refresh(explorer_obj)
-      end
-
-      if total_hunks == 1 and is_unstaged_view and explorer_obj and explorer_obj.on_file_select then
-        -- Last unstaged hunk staged: switch to staged view
-        explorer_obj.on_file_select({
-          path = file_path,
-          group = "staged",
-          status = "M",
-        })
-        vim.notify("All hunks staged — switched to staged view", vim.log.levels.INFO)
-      else
-        vim.notify(string.format("Staged hunk %d", hunk_idx), vim.log.levels.INFO)
-
-        -- Refresh diff view: reload virtual buffers and recompute diff
-        -- For unstaged views where original was HEAD, switch to :0 (index)
-        -- so the staged hunk disappears from the diff (matches VS Code behavior)
-        local view = require("codediff.ui.view")
-        local refresh_config = {
-          mode = session.mode,
-          git_root = session.git_root,
-          original_path = session.original_path,
-          modified_path = session.modified_path,
-          original_revision = session.original_revision,
-          modified_revision = session.modified_revision,
-        }
-        if is_unstaged_view and session.original_revision ~= ":0" then
-          refresh_config.original_revision = ":0"
-        end
-        -- Save current window so view.update() doesn't move cursor
-        -- (creating a new virtual buffer uses :edit! which switches window)
-        local current_win = vim.api.nvim_get_current_win()
-        view.update(tabpage, refresh_config, false)
-        if vim.api.nvim_win_is_valid(current_win) then
-          vim.api.nvim_set_current_win(current_win)
-        end
-      end
+      vim.notify(string.format("Staged hunk %d", hunk_idx), vim.log.levels.INFO)
     end)
   end
 
@@ -516,50 +471,13 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
 
     local patch = build_hunk_patch(file_path, orig_lines, mod_lines, hunk.original.start_line, hunk.modified.start_line)
 
-    -- Capture hunk count before async call (stored_diff_result may change)
-    local total_hunks = session.stored_diff_result and #session.stored_diff_result.changes or 0
-    local is_staged_view = session.modified_revision == ":0"
-
     local git = require("codediff.core.git")
     git.apply_patch(session.git_root, patch, true, function(err)
       if err then
         vim.notify("Failed to unstage hunk: " .. err, vim.log.levels.ERROR)
         return
       end
-
-      -- Refresh explorer to reflect unstaging change
-      local explorer_obj = lifecycle.get_explorer(tabpage)
-      if explorer_obj then
-        local explorer = require("codediff.ui.explorer")
-        explorer.refresh(explorer_obj)
-      end
-
-      if total_hunks == 1 and is_staged_view and explorer_obj and explorer_obj.on_file_select then
-        -- Last staged hunk unstaged: switch to unstaged view
-        explorer_obj.on_file_select({
-          path = file_path,
-          group = "unstaged",
-          status = "M",
-        })
-        vim.notify("All hunks unstaged — switched to unstaged view", vim.log.levels.INFO)
-      else
-        vim.notify(string.format("Unstaged hunk %d", hunk_idx), vim.log.levels.INFO)
-
-        -- Refresh diff view: reload virtual buffers and recompute diff
-        local view = require("codediff.ui.view")
-        local current_win = vim.api.nvim_get_current_win()
-        view.update(tabpage, {
-          mode = session.mode,
-          git_root = session.git_root,
-          original_path = session.original_path,
-          modified_path = session.modified_path,
-          original_revision = session.original_revision,
-          modified_revision = session.modified_revision,
-        }, false)
-        if vim.api.nvim_win_is_valid(current_win) then
-          vim.api.nvim_set_current_win(current_win)
-        end
-      end
+      vim.notify(string.format("Unstaged hunk %d", hunk_idx), vim.log.levels.INFO)
     end)
   end
 
@@ -614,30 +532,7 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
           vim.notify("Failed to discard hunk: " .. err, vim.log.levels.ERROR)
           return
         end
-
-        -- Refresh explorer to reflect discard
-        local explorer_obj = lifecycle.get_explorer(tabpage)
-        if explorer_obj then
-          local explorer = require("codediff.ui.explorer")
-          explorer.refresh(explorer_obj)
-        end
-
         vim.notify(string.format("Discarded hunk %d", hunk_idx), vim.log.levels.INFO)
-
-        -- Refresh diff view: reload virtual buffers and recompute diff
-        local view = require("codediff.ui.view")
-        local current_win = vim.api.nvim_get_current_win()
-        view.update(tabpage, {
-          mode = session.mode,
-          git_root = session.git_root,
-          original_path = session.original_path,
-          modified_path = session.modified_path,
-          original_revision = session.original_revision,
-          modified_revision = session.modified_revision,
-        }, false)
-        if vim.api.nvim_win_is_valid(current_win) then
-          vim.api.nvim_set_current_win(current_win)
-        end
       end)
     end)
   end
