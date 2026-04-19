@@ -555,6 +555,38 @@ vim.api.nvim_create_autocmd("User", {
 ```
 
 </details>
+
+<details>
+<summary>Example: Show hunk info in lualine</summary>
+
+Use `require("codediff").get_hunk_info()` to display the current hunk position and staged hunk count in your statusline. Returns a table with `total` (number of hunks), `current` (1-based index of hunk at cursor, 0 if not on a hunk), and `staged_total` (staged hunks for this file, `nil` if not applicable or still computing).
+
+```lua
+require("lualine").setup({
+  sections = {
+    lualine_c = {
+      {
+        function()
+          local info = require("codediff").get_hunk_info()
+          if not info then
+            return ""
+          end
+          local s = string.format("Hunk %d/%d", info.current, info.total)
+          if info.staged_total then
+            s = s .. string.format(" (%d staged)", info.staged_total)
+          end
+          return s
+        end,
+        cond = function()
+          return require("codediff").get_hunk_info() ~= nil
+        end,
+      },
+    },
+  },
+})
+```
+
+</details>
 ```
 
 ## Architecture
