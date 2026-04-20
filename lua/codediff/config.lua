@@ -44,6 +44,15 @@ M.defaults = {
     jump_to_first_change = true, -- Auto-scroll to first change when opening a diff: true = jump to first hunk, false = stay at same line
     highlight_priority = 100, -- Priority for line-level diff highlights (increase to override LSP highlights)
     compute_moves = false, -- Detect moved code blocks (opt-in, may increase diff computation time)
+    -- Hook called after a successful layout toggle. Receives a context table
+    --   { tabpage, previous, current }  -- previous/current ∈ {"inline","side-by-side"}
+    -- and may return a partial config override table that is deep-merged into
+    -- config.options before the panel is repositioned. Useful for coupling
+    -- explorer.position (or history.position) to the current layout, e.g.:
+    --   on_layout_change = function(ctx)
+    --     return { explorer = { position = ctx.current == "inline" and "left" or "bottom" } }
+    --   end
+    on_layout_change = nil,
   },
 
   -- Explorer panel configuration

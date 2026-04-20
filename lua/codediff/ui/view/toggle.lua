@@ -109,6 +109,13 @@ function M.toggle(tabpage)
 
   if rerender_current_file(tabpage) then
     layout.arrange(tabpage)
+
+    -- Run the on_layout_change hook (if any) so any returned config overrides
+    -- are in place before we rebuild; then rebuild the panel so position and
+    -- view_mode changes take effect.
+    local panel = require("codediff.ui.view.panel")
+    panel.apply_layout_change_hook(tabpage, previous_layout, session.layout)
+    panel.rebuild(tabpage)
   end
 
   return true
