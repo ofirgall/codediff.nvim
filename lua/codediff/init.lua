@@ -133,8 +133,10 @@ function M.get_hunk_info()
   local diff_result = session.stored_diff_result
   local total = diff_result.changes and #diff_result.changes or 0
 
-  -- Find current hunk index from cursor position
+  -- Find current hunk index from cursor position: the last hunk whose
+  -- start_line is <= cursor_line (0 if cursor is before all hunks).
   local current = 0
+  local current_length = 0
   if total > 0 then
     local current_buf = vim.api.nvim_get_current_buf()
     local is_inline = session.layout == "inline"
@@ -144,15 +146,17 @@ function M.get_hunk_info()
       local cursor_line = cursor[1]
       for i, mapping in ipairs(diff_result.changes) do
         local start_line = is_original and mapping.original.start_line or mapping.modified.start_line
+        if cursor_line >= start_line then
+          current = i
+        else
+          break
+        end
+      end
+      if current > 0 then
+        local mapping = diff_result.changes[current]
+        local start_line = is_original and mapping.original.start_line or mapping.modified.start_line
         local end_line = is_original and mapping.original.end_line or mapping.modified.end_line
-        if cursor_line >= start_line and cursor_line < end_line then
-          current = i
-          break
-        end
-        if start_line == end_line and cursor_line == start_line then
-          current = i
-          break
-        end
+        current_length = math.max(0, end_line - start_line)
       end
     end
   end
@@ -170,6 +174,7 @@ function M.get_hunk_info()
   return {
     total = total,
     current = current,
+    current_length = current_length,
     staged_total = staged_total,
   }
 end
