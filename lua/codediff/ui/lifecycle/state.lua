@@ -223,10 +223,10 @@ local function resume_diff(tabpage)
         end
 
         -- Re-apply critical window options that might have been reset
-        vim.wo[diff.original_win].wrap = false
-        vim.wo[diff.modified_win].wrap = false
+        -- vim.wo[diff.original_win].wrap = false
+        -- vim.wo[diff.modified_win].wrap = false
         if result_win then
-          vim.wo[result_win].wrap = false
+          -- vim.wo[result_win].wrap = false
         end
 
         -- Step 4: Restore cursor position with both line and column
