@@ -14,20 +14,26 @@ local layout = require("codediff.ui.layout")
 --- Invoke the diff.on_layout_change hook (if any) and merge the returned
 --- override table into config.options. Shared by initial panel setup and by
 --- the layout-toggle flow so the hook runs in both places.
+--- Returns true only when the hook supplied a non-empty override table, so the
+--- caller can skip a panel rebuild when nothing actually changed.
 ---@param tabpage number
 ---@param previous string|nil  -- previous layout, or nil on first run
 ---@param current string       -- current layout
+---@return boolean changed
 local function apply_layout_change_hook(tabpage, previous, current)
   local hook = config.options.diff and config.options.diff.on_layout_change
   if type(hook) ~= "function" then
-    return
+    return false
   end
   local ok, overrides = pcall(hook, { tabpage = tabpage, previous = previous, current = current })
   if not ok then
     vim.notify("codediff: on_layout_change hook error: " .. tostring(overrides), vim.log.levels.WARN)
-  elseif type(overrides) == "table" then
+    return false
+  elseif type(overrides) == "table" and next(overrides) ~= nil then
     config.options = vim.tbl_deep_extend("force", config.options, overrides)
+    return true
   end
+  return false
 end
 
 M.apply_layout_change_hook = apply_layout_change_hook

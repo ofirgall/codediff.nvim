@@ -111,11 +111,14 @@ function M.toggle(tabpage)
     layout.arrange(tabpage)
 
     -- Run the on_layout_change hook (if any) so any returned config overrides
-    -- are in place before we rebuild; then rebuild the panel so position and
-    -- view_mode changes take effect.
+    -- are in place before we rebuild. Only rebuild the panel when the hook
+    -- actually changed config; an unconditional rebuild recreates the explorer
+    -- and resets its file-navigation state (which is restored asynchronously),
+    -- breaking next_file/prev_file immediately after a toggle.
     local panel = require("codediff.ui.view.panel")
-    panel.apply_layout_change_hook(tabpage, previous_layout, session.layout)
-    panel.rebuild(tabpage)
+    if panel.apply_layout_change_hook(tabpage, previous_layout, session.layout) then
+      panel.rebuild(tabpage)
+    end
   end
 
   return true

@@ -834,4 +834,58 @@ describe("Layout toggle", function()
     assert.is_false(view.toggle_layout(tabpage))
     assert.equals("side-by-side", session.layout)
   end)
+
+  it("rebuilds the panel on toggle only when on_layout_change changes config", function()
+    repo = h.create_temp_git_repo()
+    repo.write_file("file.txt", { "line 1" })
+    repo.git("add file.txt")
+    repo.git('commit -m "initial"')
+    repo.write_file("file.txt", { "line 1 changed" })
+
+    local tabpage, _, explorer = open_codediff_and_wait(repo, "file.txt")
+    select_explorer_file(tabpage, explorer, {
+      path = "file.txt",
+      status = "M",
+      git_root = repo.dir,
+      group = "unstaged",
+    }, function(session)
+      return session.modified_path == repo.path("file.txt")
+    end)
+
+    local config = require("codediff.config")
+    local saved_position = config.options.explorer.position
+
+    -- Case 1: no hook -> panel is NOT rebuilt, so its buffer (and navigation
+    -- state) is preserved across the toggle.
+    local bufnr_before = lifecycle.get_explorer(tabpage).bufnr
+    assert.is_true(view.toggle_layout(tabpage))
+    wait_for(tabpage, function(s)
+      return s.layout == "inline"
+    end, "Should toggle to inline")
+    assert.equals(bufnr_before, lifecycle.get_explorer(tabpage).bufnr, "Explorer should not be rebuilt when no hook is configured")
+
+    -- Case 2: hook returns an override -> panel IS rebuilt and the override applies.
+    local hook_ctx
+    config.options.diff.on_layout_change = function(ctx)
+      hook_ctx = ctx
+      return { explorer = { position = "bottom" } }
+    end
+
+    local bufnr_before_hook = lifecycle.get_explorer(tabpage).bufnr
+    assert.is_true(view.toggle_layout(tabpage))
+    wait_for(tabpage, function(s)
+      return s.layout == "side-by-side"
+    end, "Should toggle back to side-by-side")
+
+    assert.equals("bottom", config.options.explorer.position, "Hook override should be merged into config")
+    assert.is_true(
+      lifecycle.get_explorer(tabpage).bufnr ~= bufnr_before_hook,
+      "Explorer should be rebuilt when the hook changes config"
+    )
+    assert.equals("inline", hook_ctx.previous)
+    assert.equals("side-by-side", hook_ctx.current)
+
+    config.options.diff.on_layout_change = nil
+    config.options.explorer.position = saved_position
+  end)
 end)
