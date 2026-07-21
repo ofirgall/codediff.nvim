@@ -193,8 +193,9 @@ end
 -- @param git_root: git repository root
 -- @param file_path: relative path to file
 -- @param group: "staged", "unstaged", or "conflicts"
+-- @param tabpage: optional tabpage to refresh after operation
 -- @return boolean: true if operation was initiated
-function M.toggle_stage_file(git_root, file_path, group)
+function M.toggle_stage_file(git_root, file_path, group, tabpage)
   if not git_root then
     vim.notify("Stage/unstage only available in git mode", vim.log.levels.WARN)
     return false
@@ -209,33 +210,24 @@ function M.toggle_stage_file(git_root, file_path, group)
     return false
   end
 
+  local function on_complete(err)
+    if err then
+      vim.schedule(function()
+        vim.notify(err, vim.log.levels.ERROR)
+      end)
+    elseif tabpage then
+      vim.schedule(function()
+        refresh_module.refresh_tabpage(tabpage)
+      end)
+    end
+  end
+
   if group == "staged" then
-    -- Unstage file
-    git.unstage_file(git_root, file_path, function(err)
-      if err then
-        vim.schedule(function()
-          vim.notify(err, vim.log.levels.ERROR)
-        end)
-      end
-    end)
+    git.unstage_file(git_root, file_path, on_complete)
   elseif group == "unstaged" then
-    -- Stage file
-    git.stage_file(git_root, file_path, function(err)
-      if err then
-        vim.schedule(function()
-          vim.notify(err, vim.log.levels.ERROR)
-        end)
-      end
-    end)
+    git.stage_file(git_root, file_path, on_complete)
   elseif group == "conflicts" then
-    -- Stage conflict file (marks as resolved)
-    git.stage_file(git_root, file_path, function(err)
-      if err then
-        vim.schedule(function()
-          vim.notify(err, vim.log.levels.ERROR)
-        end)
-      end
-    end)
+    git.stage_file(git_root, file_path, on_complete)
   end
 
   return true
@@ -245,25 +237,24 @@ end
 -- @param git_root: git repository root
 -- @param dir_path: relative directory path
 -- @param group: "staged" or "unstaged"
-local function toggle_stage_directory(git_root, dir_path, group)
+-- @param tabpage: optional tabpage to refresh after operation
+local function toggle_stage_directory(git_root, dir_path, group, tabpage)
+  local function on_complete(err)
+    if err then
+      vim.schedule(function()
+        vim.notify(err, vim.log.levels.ERROR)
+      end)
+    elseif tabpage then
+      vim.schedule(function()
+        refresh_module.refresh_tabpage(tabpage)
+      end)
+    end
+  end
+
   if group == "staged" then
-    -- Unstage directory
-    git.unstage_file(git_root, dir_path, function(err)
-      if err then
-        vim.schedule(function()
-          vim.notify(err, vim.log.levels.ERROR)
-        end)
-      end
-    end)
+    git.unstage_file(git_root, dir_path, on_complete)
   elseif group == "unstaged" then
-    -- Stage directory
-    git.stage_file(git_root, dir_path, function(err)
-      if err then
-        vim.schedule(function()
-          vim.notify(err, vim.log.levels.ERROR)
-        end)
-      end
-    end)
+    git.stage_file(git_root, dir_path, on_complete)
   end
 end
 
@@ -283,16 +274,14 @@ function M.toggle_stage_entry(explorer, tree)
   local group = node.data.group
 
   if entry_type == "directory" then
-    -- Directory uses dir_path, not path
     local dir_path = node.data.dir_path
     if dir_path then
-      toggle_stage_directory(explorer.git_root, dir_path, group)
+      toggle_stage_directory(explorer.git_root, dir_path, group, explorer.tabpage)
     end
   else
-    -- File uses path
     local path = node.data.path
     if path then
-      M.toggle_stage_file(explorer.git_root, path, group)
+      M.toggle_stage_file(explorer.git_root, path, group, explorer.tabpage)
     end
   end
 end
@@ -309,6 +298,10 @@ function M.stage_all(explorer)
       vim.schedule(function()
         vim.notify(err, vim.log.levels.ERROR)
       end)
+    elseif explorer.tabpage then
+      vim.schedule(function()
+        refresh_module.refresh_tabpage(explorer.tabpage)
+      end)
     end
   end)
 end
@@ -324,6 +317,10 @@ function M.unstage_all(explorer)
     if err then
       vim.schedule(function()
         vim.notify(err, vim.log.levels.ERROR)
+      end)
+    elseif explorer.tabpage then
+      vim.schedule(function()
+        refresh_module.refresh_tabpage(explorer.tabpage)
       end)
     end
   end)
@@ -368,36 +365,36 @@ function M.restore_entry(explorer, tree)
   local choice = vim.fn.confirm(prompt, "&Discard\n&Cancel", 2, "Warning")
 
   if choice == 1 then
+    local function on_restore_complete(err)
+      if err then
+        vim.schedule(function()
+          vim.notify(err, vim.log.levels.ERROR)
+        end)
+      elseif explorer.tabpage then
+        vim.schedule(function()
+          refresh_module.refresh_tabpage(explorer.tabpage)
+        end)
+      end
+    end
+
     if is_untracked then
-      -- Delete untracked file/directory
-      git.delete_untracked(explorer.git_root, entry_path, function(err)
-        if err then
-          vim.schedule(function()
-            vim.notify(err, vim.log.levels.ERROR)
-          end)
-        end
-      end)
+      git.delete_untracked(explorer.git_root, entry_path, on_restore_complete)
     elseif is_directory then
-      -- Directory may contain both tracked and untracked files
-      -- Run git restore for tracked changes, then git clean for untracked
       git.restore_file(explorer.git_root, entry_path, explorer.base_revision, function(restore_err)
         git.delete_untracked(explorer.git_root, entry_path, function(clean_err)
           if restore_err and clean_err then
             vim.schedule(function()
               vim.notify("Failed to restore: " .. restore_err, vim.log.levels.ERROR)
             end)
+          elseif explorer.tabpage then
+            vim.schedule(function()
+              refresh_module.refresh_tabpage(explorer.tabpage)
+            end)
           end
         end)
       end)
     else
-      -- Restore tracked file
-      git.restore_file(explorer.git_root, entry_path, explorer.base_revision, function(err)
-        if err then
-          vim.schedule(function()
-            vim.notify(err, vim.log.levels.ERROR)
-          end)
-        end
-      end)
+      git.restore_file(explorer.git_root, entry_path, explorer.base_revision, on_restore_complete)
     end
   end
   vim.cmd("echo ''") -- Clear prompt

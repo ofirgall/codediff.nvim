@@ -252,7 +252,7 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
       end
 
       local explorer_module = require("codediff.ui.explorer")
-      explorer_module.toggle_stage_file(explorer.git_root, file_path, group)
+      explorer_module.toggle_stage_file(explorer.git_root, file_path, group, tabpage)
       return
     end
 
@@ -442,6 +442,9 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
         return
       end
       vim.notify(string.format("Staged hunk %d", hunk_idx), vim.log.levels.INFO)
+      vim.schedule(function()
+        require("codediff.ui.explorer.refresh").refresh_tabpage(tabpage)
+      end)
     end)
   end
 
@@ -490,6 +493,9 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
         return
       end
       vim.notify(string.format("Unstaged hunk %d", hunk_idx), vim.log.levels.INFO)
+      vim.schedule(function()
+        require("codediff.ui.explorer.refresh").refresh_tabpage(tabpage)
+      end)
     end)
   end
 
@@ -545,6 +551,9 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
         return
       end
       vim.notify(string.format("Discarded hunk %d", hunk_idx), vim.log.levels.INFO)
+      vim.schedule(function()
+        require("codediff.ui.explorer.refresh").refresh_tabpage(tabpage)
+      end)
     end)
   end
 

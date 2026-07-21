@@ -369,6 +369,21 @@ function M.refresh(explorer)
   end
 end
 
+--- Refresh the explorer associated with a tabpage.
+--- Unlike the auto-refresh mechanism (BufEnter + fs watcher), this fires
+--- unconditionally — ensuring the UI updates after explicit git operations
+--- (stage, unstage, restore, hunk apply) even when auto_refresh is disabled.
+function M.refresh_tabpage(tabpage)
+  local lifecycle = require("codediff.ui.lifecycle")
+  local session = lifecycle.get_session(tabpage)
+  if not session or not session.explorer then
+    return
+  end
+  M.refresh(session.explorer)
+  local auto_refresh = require("codediff.ui.auto_refresh")
+  auto_refresh.sync_mutable_buffers(tabpage)
+end
+
 -- Get flat list of all files from tree (unstaged + staged)
 -- Handles both list mode (flat) and tree mode (nested directories)
 function M.get_all_files(tree)
