@@ -1237,4 +1237,51 @@ describe("Layout Manager", function()
     cleanup_mock_session(tabpage)
     pcall(panel.split.unmount, panel.split)
   end)
+
+  -- Regression test: panel width should be re-applied when an external plugin
+  -- (e.g. sidekick.nvim) creates a window in the same tab
+  it("re-pins panel width after WinNew from foreign window", function()
+    local panel_width = 32
+    local panel = create_panel_split("left", panel_width)
+    vim.cmd("vsplit")
+    local orig_win = vim.api.nvim_get_current_win()
+    vim.cmd("vsplit")
+    local mod_win = vim.api.nvim_get_current_win()
+    local orig_buf = vim.api.nvim_create_buf(false, true)
+    local mod_buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_win_set_buf(orig_win, orig_buf)
+    vim.api.nvim_win_set_buf(mod_win, mod_buf)
+
+    local tabpage = vim.api.nvim_get_current_tabpage()
+    local session_mod = require("codediff.ui.lifecycle.session")
+    config.options.explorer = config.options.explorer or {}
+    config.options.explorer.width = panel_width
+    session_mod.create_session(
+      tabpage, "explorer", "/tmp", "", "", nil, nil,
+      orig_buf, mod_buf, orig_win, mod_win, {}, nil
+    )
+    local accessors = require("codediff.ui.lifecycle.accessors")
+    accessors.set_explorer(tabpage, panel)
+
+    require("codediff.ui.lifecycle.cleanup").setup_autocmds()
+
+    layout.arrange(tabpage)
+    local initial = vim.api.nvim_win_get_width(panel.winid)
+    assert_width_near(panel_width, initial, "Initial panel width should match config:")
+
+    -- Simulate an external plugin creating a window (like sidekick.nvim)
+    vim.cmd("botright vsplit")
+    local foreign_win = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_width(foreign_win, 30)
+    vim.cmd("doautocmd WinNew")
+    vim.wait(50)
+
+    local restored = vim.api.nvim_win_get_width(panel.winid)
+    assert_width_near(panel_width, restored, "WinNew should re-pin panel width after foreign window:")
+
+    -- Cleanup foreign window
+    pcall(vim.api.nvim_win_close, foreign_win, true)
+    cleanup_mock_session(tabpage)
+    pcall(panel.split.unmount, panel.split)
+  end)
 end)

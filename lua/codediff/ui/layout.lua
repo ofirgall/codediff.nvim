@@ -53,13 +53,8 @@ function M.arrange(tabpage)
       if panel_visible then
         if panel_position == "left" then
           vim.api.nvim_win_set_width(panel_win, panel_config.width)
-          -- Explicitly set diff window to fill remainder
-          local remainder = vim.o.columns - panel_config.width - 1
-          vim.api.nvim_win_set_width(sole_win, remainder)
         else
           vim.api.nvim_win_set_height(panel_win, panel_config.height)
-          -- Diff window takes full width
-          vim.api.nvim_win_set_width(sole_win, vim.o.columns)
         end
       end
     end

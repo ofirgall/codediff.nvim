@@ -229,6 +229,26 @@ function M.setup_autocmds()
       end
     end,
   })
+
+  -- Re-pin panel widths when external plugins (e.g. sidekick.nvim) create or
+  -- close windows in a codediff tab, which causes Neovim's equalalways to
+  -- redistribute space and shrink the explorer panel.
+  vim.api.nvim_create_autocmd({ "WinNew", "WinClosed" }, {
+    group = augroup,
+    callback = function()
+      vim.schedule(function()
+        local ok_l, layout = pcall(require, "codediff.ui.layout")
+        if not ok_l then
+          return
+        end
+        local current_tab = vim.api.nvim_get_current_tabpage()
+        local active = session.get_active_diffs()
+        if active[current_tab] then
+          pcall(layout.arrange, current_tab)
+        end
+      end)
+    end,
+  })
 end
 
 -- Manual cleanup function (can be called explicitly)
