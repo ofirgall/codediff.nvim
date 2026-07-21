@@ -72,6 +72,7 @@ M.defaults = {
     file_filter = {
       ignore = { ".git/**", ".jj/**" }, -- Glob patterns to hide (e.g., {"*.lock", "dist/*"})
     },
+    show_line_stats = true, -- Show +insertions -deletions per file (replaces status symbol)
     focus_on_select = false, -- Jump to modified pane after selecting a file (default: stay in explorer)
     flatten_dirs = true, -- Flatten single-child directory chains in tree view (e.g., src/components/ui/)
     status_right_margin = 1, -- Trailing cells between the status symbol (M/A/D) and the right edge; increase if Nerd Font icons clip it

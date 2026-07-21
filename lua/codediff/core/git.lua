@@ -394,6 +394,78 @@ function M.get_status(git_root, callback)
   )
 end
 
+-- Parse numstat output into a table keyed by path
+-- Each line: "<insertions>\t<deletions>\t<path>" (binary files show "-\t-\t<path>")
+local function parse_numstat(output)
+  local stats = {}
+  for line in output:gmatch("[^\r\n]+") do
+    local ins, del, path = line:match("^(%S+)\t(%S+)\t(.+)$")
+    if ins and del and path then
+      path = unquote_path(path)
+      -- Handle renames: "old_path => new_path" or "{old => new}/file"
+      local rename_new = path:match("^.+ => (.+)$")
+      if rename_new then
+        path = rename_new
+      end
+      local brace_rename = path:match("{.- => (.-)}") 
+      if brace_rename then
+        path = path:gsub("{.- => (.-)}","%1")
+      end
+      if ins == "-" then
+        stats[path] = { insertions = -1, deletions = -1, binary = true }
+      else
+        stats[path] = { insertions = tonumber(ins) or 0, deletions = tonumber(del) or 0 }
+      end
+    end
+  end
+  return stats
+end
+
+--- Get per-file line stats (insertions/deletions) for working tree changes.
+--- Runs `git diff --numstat` (unstaged) and `git diff --cached --numstat` (staged).
+--- callback: function(err, numstat) where numstat = { unstaged = {path={ins,del}}, staged = {path={ins,del}} }
+function M.get_numstat(git_root, callback)
+  run_git_async({ "diff", "--numstat", "-M" }, { cwd = git_root }, function(err1, unstaged_output)
+    if err1 then
+      callback(err1, nil)
+      return
+    end
+    run_git_async({ "diff", "--cached", "--numstat", "-M" }, { cwd = git_root }, function(err2, staged_output)
+      if err2 then
+        callback(err2, nil)
+        return
+      end
+      callback(nil, {
+        unstaged = parse_numstat(unstaged_output),
+        staged = parse_numstat(staged_output),
+      })
+    end)
+  end)
+end
+
+--- Get per-file line stats for a revision comparison.
+--- revision: single revision to compare against working tree
+function M.get_numstat_revision(revision, git_root, callback)
+  run_git_async({ "diff", "--numstat", "-M", revision }, { cwd = git_root }, function(err, output)
+    if err then
+      callback(err, nil)
+      return
+    end
+    callback(nil, { unstaged = parse_numstat(output), staged = {} })
+  end)
+end
+
+--- Get per-file line stats for two-revision comparison.
+function M.get_numstat_revisions(rev1, rev2, git_root, callback)
+  run_git_async({ "diff", "--numstat", "-M", rev1, rev2 }, { cwd = git_root }, function(err, output)
+    if err then
+      callback(err, nil)
+      return
+    end
+    callback(nil, { unstaged = parse_numstat(output), staged = {} })
+  end)
+end
+
 -- Get diff between a revision and working tree (async)
 -- revision: git revision (e.g., "HEAD", "HEAD~1", commit hash, branch name)
 -- git_root: absolute path to git repository root

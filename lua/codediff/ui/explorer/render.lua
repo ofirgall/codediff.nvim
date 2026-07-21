@@ -585,6 +585,68 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
   -- Setup auto-refresh
   refresh_module.setup_auto_refresh(explorer, tabpage)
 
+  -- Fetch line stats asynchronously for the initial render (show_line_stats)
+  if explorer_config.show_line_stats and git_root then
+    vim.schedule(function()
+      local git = require("codediff.core.git")
+      local fetch_numstat
+      if base_revision and target_revision and target_revision ~= "WORKING" then
+        fetch_numstat = function(cb) git.get_numstat_revisions(base_revision, target_revision, git_root, cb) end
+      elseif base_revision then
+        fetch_numstat = function(cb) git.get_numstat_revision(base_revision, git_root, cb) end
+      else
+        fetch_numstat = function(cb) git.get_numstat(git_root, cb) end
+      end
+      fetch_numstat(function(err, numstat)
+        if err or not numstat then
+          return
+        end
+        vim.schedule(function()
+          if not explorer.status_result then
+            return
+          end
+          refresh_module.merge_numstat(explorer.status_result, numstat, git_root)
+          -- Build a lookup from the enriched status_result (includes untracked line counts)
+          local stats_by_path = {}
+          for _, file in ipairs(explorer.status_result.unstaged or {}) do
+            if file.insertions then
+              stats_by_path[file.path] = file
+            end
+          end
+          for _, file in ipairs(explorer.status_result.staged or {}) do
+            if file.insertions then
+              stats_by_path[file.path] = stats_by_path[file.path] or file
+            end
+          end
+          -- Patch existing tree nodes with the stats
+          local function patch_nodes(parent_node)
+            if not parent_node:has_children() then
+              return
+            end
+            for _, child_id in ipairs(parent_node:get_child_ids()) do
+              local child = explorer.tree:get_node(child_id)
+              if child and child.data then
+                if child.data.path and stats_by_path[child.data.path] then
+                  local f = stats_by_path[child.data.path]
+                  child.data.insertions = f.insertions
+                  child.data.deletions = f.deletions
+                  child.data.binary = f.binary
+                end
+                if child.data.type == "directory" then
+                  patch_nodes(child)
+                end
+              end
+            end
+          end
+          for _, root_node in ipairs(explorer.tree:get_nodes()) do
+            patch_nodes(root_node)
+          end
+          explorer.tree:render()
+        end)
+      end)
+    end)
+  end
+
   -- Re-render on window resize for dynamic width
   vim.api.nvim_create_autocmd("WinResized", {
     callback = function()

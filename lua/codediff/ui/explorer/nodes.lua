@@ -106,6 +106,9 @@ function M.create_file_nodes(files, git_root, group)
         status_color = status_info.color,
         git_root = git_root,
         group = group,
+        insertions = file.insertions,
+        deletions = file.deletions,
+        binary = file.binary,
       },
     })
   end
@@ -230,6 +233,9 @@ function M.create_tree_file_nodes(files, git_root, group)
             git_root = git_root,
             group = group,
             indent_state = node_indent_state,
+            insertions = file.insertions,
+            deletions = file.deletions,
+            binary = file.binary,
           },
         })
       end
@@ -342,8 +348,29 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
       line:append(icon_part, get_hl(data.icon_color))
     end
 
-    -- Status symbol at the end (e.g., "M", "D", "??")
-    local status_symbol = data.status_symbol or ""
+    -- Determine right-side indicator: line stats or status symbol
+    local show_line_stats = explorer_config.show_line_stats and (data.insertions or data.binary)
+    local right_text, right_width
+
+    if show_line_stats then
+      if data.binary then
+        right_text = "BIN"
+        right_width = 3
+      else
+        local ins = data.insertions or 0
+        local del = data.deletions or 0
+        local is_whole_file = data.status == "A" or data.status == "D" or data.status == "??"
+        local star = is_whole_file and "*" or ""
+        local parts = {}
+        if ins > 0 then parts[#parts + 1] = "+" .. tostring(ins) .. star end
+        if del > 0 then parts[#parts + 1] = "-" .. tostring(del) .. star end
+        right_text = table.concat(parts, " ")
+        right_width = #right_text
+      end
+    else
+      right_text = data.status_symbol or ""
+      right_width = vim.fn.strdisplaywidth(right_text)
+    end
 
     -- Split path into filename and directory
     local full_path = data.path or node.text
@@ -351,11 +378,10 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
     -- In tree mode, don't show directory (it's in the hierarchy)
     local directory = (view_mode == "tree") and "" or full_path:sub(1, -(#filename + 1))
 
-    -- Calculate how much width we've used and reserve for status
+    -- Calculate how much width we've used and reserve for right indicator
     local status_margin = config.options.explorer.status_right_margin or 1
     local used_width = vim.fn.strdisplaywidth(indent) + vim.fn.strdisplaywidth(icon_part)
-    -- Reserve = symbol + 2 cells of minimum gap from content + configurable trailing margin
-    local status_reserve = vim.fn.strdisplaywidth(status_symbol) + 2 + status_margin
+    local status_reserve = right_width + 2 + status_margin
     local available_for_content = max_width - used_width - status_reserve
 
     -- Show: filename + full directory path, truncate directory from left if needed
@@ -396,11 +422,33 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
       line:append(directory, get_hl("ExplorerDirectorySmall"))
     end
 
-    -- Right-align status symbol; trailing `status_margin` cells keep it visible against the window edge
+    -- Right-align indicator; trailing `status_margin` cells keep it visible against the window edge
     local content_len = vim.fn.strdisplaywidth(filename) + space_len + vim.fn.strdisplaywidth(directory)
     local padding_needed = math.max(2, available_for_content - content_len + 2)
     line:append(string.rep(" ", padding_needed), get_hl("Normal"))
-    line:append(status_symbol, get_hl(data.status_color))
+
+    if show_line_stats then
+      if data.binary then
+        line:append("BIN", get_hl("WarningMsg"))
+      else
+        local ins = data.insertions or 0
+        local del = data.deletions or 0
+        local is_whole_file = data.status == "A" or data.status == "D" or data.status == "??"
+        local star = is_whole_file and "*" or ""
+        if ins > 0 then
+          line:append("+" .. tostring(ins) .. star, get_hl("DiagnosticOk"))
+          if del > 0 then
+            line:append(" ", get_hl("Normal"))
+          end
+        end
+        if del > 0 then
+          line:append("-" .. tostring(del) .. star, get_hl("DiagnosticError"))
+        end
+      end
+    else
+      line:append(right_text, get_hl(data.status_color))
+    end
+
     if status_margin > 0 then
       line:append(string.rep(" ", status_margin), get_hl("Normal"))
     end

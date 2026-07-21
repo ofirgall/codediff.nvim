@@ -354,18 +354,84 @@ function M.refresh(explorer)
     end)
   end
 
+  -- Optionally enrich status_result with per-file line stats before processing
+  local explorer_config = config.options.explorer or {}
+  local function process_with_stats(err, status_result)
+    if err or not explorer_config.show_line_stats or not explorer.git_root then
+      process_result(err, status_result)
+      return
+    end
+    local fetch_numstat
+    if explorer.base_revision and explorer.target_revision and explorer.target_revision ~= "WORKING" then
+      fetch_numstat = function(cb) git.get_numstat_revisions(explorer.base_revision, explorer.target_revision, explorer.git_root, cb) end
+    elseif explorer.base_revision then
+      fetch_numstat = function(cb) git.get_numstat_revision(explorer.base_revision, explorer.git_root, cb) end
+    else
+      fetch_numstat = function(cb) git.get_numstat(explorer.git_root, cb) end
+    end
+    fetch_numstat(function(stat_err, numstat)
+      if stat_err or not numstat then
+        process_result(nil, status_result)
+        return
+      end
+      M.merge_numstat(status_result, numstat, explorer.git_root)
+      process_result(nil, status_result)
+    end)
+  end
+
   -- Use appropriate function based on mode
   if not explorer.git_root then
-    -- Dir mode: re-scan directories
     local dir_mod = require("codediff.core.dir")
     local diff = dir_mod.diff_directories(explorer.dir1, explorer.dir2)
-    process_result(nil, diff.status_result)
+    process_with_stats(nil, diff.status_result)
   elseif explorer.base_revision and explorer.target_revision and explorer.target_revision ~= "WORKING" then
-    git.get_diff_revisions(explorer.base_revision, explorer.target_revision, explorer.git_root, process_result)
+    git.get_diff_revisions(explorer.base_revision, explorer.target_revision, explorer.git_root, process_with_stats)
   elseif explorer.base_revision then
-    git.get_diff_revision(explorer.base_revision, explorer.git_root, process_result)
+    git.get_diff_revision(explorer.base_revision, explorer.git_root, process_with_stats)
   else
-    git.get_status(explorer.git_root, process_result)
+    git.get_status(explorer.git_root, process_with_stats)
+  end
+end
+
+--- Merge numstat data into status_result file entries.
+--- For untracked files (not in numstat), count lines from disk.
+function M.merge_numstat(status_result, numstat, git_root)
+  for _, file in ipairs(status_result.unstaged or {}) do
+    local stats = numstat.unstaged and numstat.unstaged[file.path]
+    if stats then
+      file.insertions = stats.insertions
+      file.deletions = stats.deletions
+      file.binary = stats.binary
+    elseif file.status == "??" and git_root then
+      local abs_path = git_root .. "/" .. file.path
+      local stat = vim.uv.fs_stat(abs_path)
+      if stat and stat.type == "file" then
+        local fd = vim.uv.fs_open(abs_path, "r", 438)
+        if fd then
+          local content = vim.uv.fs_read(fd, stat.size, 0)
+          vim.uv.fs_close(fd)
+          if content then
+            local lines = 0
+            for _ in content:gmatch("\n") do
+              lines = lines + 1
+            end
+            if #content > 0 and content:sub(-1) ~= "\n" then
+              lines = lines + 1
+            end
+            file.insertions = lines
+            file.deletions = 0
+          end
+        end
+      end
+    end
+  end
+  for _, file in ipairs(status_result.staged or {}) do
+    local stats = numstat.staged and numstat.staged[file.path]
+    if stats then
+      file.insertions = stats.insertions
+      file.deletions = stats.deletions
+      file.binary = stats.binary
+    end
   end
 end
 
