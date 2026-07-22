@@ -131,6 +131,8 @@ function M.create(commits, git_root, tabpage, width, opts)
       signcolumn = "no",
       foldcolumn = "0",
       spell = false,
+      scrollbind = false,
+      cursorbind = false,
     },
   })
 
