@@ -394,22 +394,28 @@ function M.get_status(git_root, callback)
   )
 end
 
--- Parse numstat output into a table keyed by path
+-- Parse numstat output into a table keyed by path (new path for renames).
 -- Each line: "<insertions>\t<deletions>\t<path>" (binary files show "-\t-\t<path>")
+-- Renames appear as: "ins\tdel\t{old => new}/rest" or "ins\tdel\told\tnew" (tab-separated)
 local function parse_numstat(output)
   local stats = {}
   for line in output:gmatch("[^\r\n]+") do
-    local ins, del, path = line:match("^(%S+)\t(%S+)\t(.+)$")
-    if ins and del and path then
-      path = unquote_path(path)
-      -- Handle renames: "old_path => new_path" or "{old => new}/file"
-      local rename_new = path:match("^.+ => (.+)$")
-      if rename_new then
-        path = rename_new
-      end
-      local brace_rename = path:match("{.- => (.-)}") 
-      if brace_rename then
-        path = path:gsub("{.- => (.-)}","%1")
+    local ins, del, rest = line:match("^(%S+)\t(%S+)\t(.+)$")
+    if ins and del and rest then
+      rest = unquote_path(rest)
+      local path
+      -- Tab-separated rename: "old_path\tnew_path"
+      local old_tab, new_tab = rest:match("^(.-)\t(.+)$")
+      if old_tab and new_tab then
+        path = new_tab
+      -- Brace rename: "prefix/{old => new}/suffix" or "{old => new}"
+      elseif rest:match("{.- => .-}") then
+        path = rest:gsub("{.- => (.-)}","%1")
+      -- Simple rename: "old_path => new_path"
+      elseif rest:match(" => ") then
+        path = rest:match(".+ => (.+)$")
+      else
+        path = rest
       end
       if ins == "-" then
         stats[path] = { insertions = -1, deletions = -1, binary = true }

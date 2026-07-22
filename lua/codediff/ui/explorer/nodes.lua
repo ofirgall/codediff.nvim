@@ -28,6 +28,7 @@ local STATUS_SYMBOLS = {
   M = { symbol = "M", color = "CodeDiffStatusModified" },
   A = { symbol = "A", color = "CodeDiffStatusAdded" },
   D = { symbol = "D", color = "CodeDiffStatusDeleted" },
+  R = { symbol = "R", color = "CodeDiffStatusModified" },
   ["??"] = { symbol = "??", color = "CodeDiffStatusUntracked" },
   ["!"] = { symbol = "!", color = "CodeDiffStatusConflict" },
 }
@@ -349,22 +350,25 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
     end
 
     -- Determine right-side indicator: line stats or status symbol
-    local show_line_stats = explorer_config.show_line_stats and (data.insertions or data.binary)
+    local has_stats = data.binary or (data.insertions and data.insertions > 0) or (data.deletions and data.deletions > 0)
+    local show_line_stats = explorer_config.show_line_stats and has_stats
     local right_text, right_width
 
     if show_line_stats then
+      local status_prefix = ""
+      if data.status == "R" or data.status == "A" or data.status == "D" or data.status == "??" then
+        status_prefix = (data.status_symbol or data.status) .. " "
+      end
       if data.binary then
-        right_text = "BIN"
-        right_width = 3
+        right_text = status_prefix .. "BIN"
+        right_width = #right_text
       else
         local ins = data.insertions or 0
         local del = data.deletions or 0
-        local is_whole_file = data.status == "A" or data.status == "D" or data.status == "??"
-        local star = is_whole_file and "*" or ""
         local parts = {}
-        if ins > 0 then parts[#parts + 1] = "+" .. tostring(ins) .. star end
-        if del > 0 then parts[#parts + 1] = "-" .. tostring(del) .. star end
-        right_text = table.concat(parts, " ")
+        if ins > 0 then parts[#parts + 1] = "+" .. tostring(ins) end
+        if del > 0 then parts[#parts + 1] = "-" .. tostring(del) end
+        right_text = status_prefix .. table.concat(parts, " ")
         right_width = #right_text
       end
     else
@@ -428,21 +432,23 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
     line:append(string.rep(" ", padding_needed), get_hl("Normal"))
 
     if show_line_stats then
+      if data.status == "R" or data.status == "A" or data.status == "D" or data.status == "??" then
+        local sym = data.status_symbol or data.status
+        line:append(sym .. " ", get_hl(data.status_color))
+      end
       if data.binary then
         line:append("BIN", get_hl("WarningMsg"))
       else
         local ins = data.insertions or 0
         local del = data.deletions or 0
-        local is_whole_file = data.status == "A" or data.status == "D" or data.status == "??"
-        local star = is_whole_file and "*" or ""
         if ins > 0 then
-          line:append("+" .. tostring(ins) .. star, get_hl("DiagnosticOk"))
+          line:append("+" .. tostring(ins), get_hl("DiagnosticOk"))
           if del > 0 then
             line:append(" ", get_hl("Normal"))
           end
         end
         if del > 0 then
-          line:append("-" .. tostring(del) .. star, get_hl("DiagnosticError"))
+          line:append("-" .. tostring(del), get_hl("DiagnosticError"))
         end
       end
     else
