@@ -59,7 +59,8 @@ end
 -- Re-render the current file in the new layout.
 -- For explorer/history: call rerender_current which re-triggers on_file_select.
 -- For standalone: rebuild session_config from existing session fields.
-local function rerender_current_file(tabpage)
+local function rerender_current_file(tabpage, opts)
+  opts = opts or {}
   local session = lifecycle.get_session(tabpage)
   if not session then
     return false
@@ -67,12 +68,12 @@ local function rerender_current_file(tabpage)
 
   if session.mode == "explorer" then
     local explorer = lifecycle.get_explorer(tabpage)
-    return explorer and require("codediff.ui.explorer").rerender_current(explorer) or false
+    return explorer and require("codediff.ui.explorer").rerender_current(explorer, opts) or false
   end
 
   if session.mode == "history" then
     local history = lifecycle.get_explorer(tabpage)
-    return history and require("codediff.ui.history").rerender_current(history) or false
+    return history and require("codediff.ui.history").rerender_current(history, opts) or false
   end
 
   -- Standalone mode: rebuild from session fields
@@ -99,6 +100,13 @@ function M.toggle(tabpage)
     return false
   end
 
+  -- Save cursor from the modified (new) buffer — its line numbers are 1:1 with inline view.
+  local saved_cursor
+  local mod_win = session.modified_win
+  if mod_win and vim.api.nvim_win_is_valid(mod_win) then
+    saved_cursor = vim.api.nvim_win_get_cursor(mod_win)
+  end
+
   local target_layout = session.layout == "inline" and "side-by-side" or "inline"
   local normalize = target_layout == "inline" and normalize_inline_layout or normalize_side_by_side_layout
   local previous_layout = session.layout
@@ -107,7 +115,19 @@ function M.toggle(tabpage)
     return false
   end
 
-  if rerender_current_file(tabpage) then
+  -- Store cursor on session so render functions can pick it up after async buffer loads.
+  -- Don't clear immediately — a second render may fire from auto-refresh/panel rebuild.
+  -- Clear after a short defer to cover all scheduled renders.
+  if saved_cursor then
+    session.restore_cursor = saved_cursor
+    vim.defer_fn(function()
+      if session.restore_cursor == saved_cursor then
+        session.restore_cursor = nil
+      end
+    end, 200)
+  end
+
+  if rerender_current_file(tabpage, { no_jump = true }) then
     layout.arrange(tabpage)
 
     -- Run the on_layout_change hook (if any) so any returned config overrides

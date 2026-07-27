@@ -28,7 +28,8 @@ local function compute_and_render_inline(
   original_is_virtual,
   modified_is_virtual,
   modified_win,
-  auto_scroll_to_first_hunk
+  auto_scroll_to_first_hunk,
+  restore_cursor
 )
   local diff_options = {
     max_computation_time_ms = config.options.diff.max_computation_time_ms,
@@ -52,8 +53,11 @@ local function compute_and_render_inline(
   end
 
   if modified_win and vim.api.nvim_win_is_valid(modified_win) then
-    -- vim.wo[modified_win].wrap = false
-    if auto_scroll_to_first_hunk and lines_diff.changes and #lines_diff.changes > 0 then
+    if restore_cursor then
+      local line_count = vim.api.nvim_buf_line_count(modified_buf)
+      local line = math.min(restore_cursor[1], line_count)
+      pcall(vim.api.nvim_win_set_cursor, modified_win, { line, restore_cursor[2] })
+    elseif auto_scroll_to_first_hunk and lines_diff.changes and #lines_diff.changes > 0 then
       local target_line = lines_diff.changes[1].modified.start_line
       pcall(vim.api.nvim_win_set_cursor, modified_win, { target_line, 0 })
       vim.api.nvim_set_current_win(modified_win)
@@ -392,7 +396,9 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
     local original_lines = vim.api.nvim_buf_get_lines(orig_buf, 0, -1, false)
     local modified_lines = vim.api.nvim_buf_get_lines(mod_buf, 0, -1, false)
 
-    local lines_diff = compute_and_render_inline(mod_buf, orig_buf, original_lines, modified_lines, original_is_virtual, modified_is_virtual, modified_win, should_auto_scroll)
+    local rc = session.restore_cursor
+
+    local lines_diff = compute_and_render_inline(mod_buf, orig_buf, original_lines, modified_lines, original_is_virtual, modified_is_virtual, modified_win, should_auto_scroll, rc)
 
     if lines_diff then
       lifecycle.update_buffers(tabpage, orig_buf, mod_buf)
@@ -408,7 +414,7 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
       setup_keymaps(tabpage, orig_buf, mod_buf)
       layout.arrange(tabpage)
 
-      if saved_current_win and vim.api.nvim_win_is_valid(saved_current_win) then
+      if not rc and saved_current_win and vim.api.nvim_win_is_valid(saved_current_win) then
         vim.api.nvim_set_current_win(saved_current_win)
       end
     end

@@ -523,6 +523,8 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
       end)
     else
       -- Normal mode: Compute and render diff between left and right
+      local rc = session.restore_cursor
+
       lines_diff = compute_and_render(
         original_info.bufnr,
         modified_info.bufnr,
@@ -533,7 +535,8 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
         original_win,
         modified_win,
         should_auto_scroll,
-        session_config.line_range
+        session_config.line_range,
+        rc
       )
 
       if lines_diff then
@@ -547,8 +550,7 @@ function M.update(tabpage, session_config, auto_scroll_to_first_hunk)
         local is_explorer_mode = session.mode == "explorer"
         view_keymaps.setup_all_keymaps(tabpage, original_info.bufnr, modified_info.bufnr, is_explorer_mode)
 
-        -- Restore focus to the window that was active before update
-        if saved_current_win and vim.api.nvim_win_is_valid(saved_current_win) then
+        if not rc and saved_current_win and vim.api.nvim_win_is_valid(saved_current_win) then
           vim.api.nvim_set_current_win(saved_current_win)
         end
       end

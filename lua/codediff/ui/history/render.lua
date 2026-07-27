@@ -430,13 +430,14 @@ function M.create(commits, git_root, tabpage, width, opts)
   return history
 end
 
-function M.rerender_current(history)
+function M.rerender_current(history, opts)
   if not history then
     return false
   end
+  opts = opts or {}
 
   if history.current_selection then
-    history.on_file_select(vim.deepcopy(history.current_selection), { force = true })
+    history.on_file_select(vim.deepcopy(history.current_selection), { force = true, no_jump = opts.no_jump })
     return true
   end
 

@@ -666,13 +666,14 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
   return explorer
 end
 
-function M.rerender_current(explorer)
+function M.rerender_current(explorer, opts)
   if not explorer then
     return false
   end
+  opts = opts or {}
 
   if explorer.current_selection then
-    explorer.on_file_select(vim.deepcopy(explorer.current_selection), { force = true })
+    explorer.on_file_select(vim.deepcopy(explorer.current_selection), { force = true, no_jump = opts.no_jump })
     return true
   end
 

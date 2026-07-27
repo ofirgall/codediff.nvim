@@ -36,6 +36,12 @@ function M.establish_scrollbind(orig_win, mod_win, orig_buf, mod_buf, lines_diff
       vim.wo[orig_win].scrollbind = true
       vim.wo[mod_win].scrollbind = true
       vim.cmd("syncbind")
+      if orig_cursor then
+        pcall(vim.api.nvim_win_set_cursor, orig_win, orig_cursor)
+      end
+      if mod_cursor then
+        pcall(vim.api.nvim_win_set_cursor, mod_win, mod_cursor)
+      end
       return
     end
   end
@@ -57,6 +63,7 @@ end
 -- Common logic: Compute diff and render highlights
 -- @param auto_scroll_to_first_hunk boolean: Whether to auto-scroll to first change (default true)
 -- @param line_range table?: Optional {start_line, end_line} to scroll to instead of first hunk
+-- @param restore_cursor table?: Optional {line, col} to force as cursor position (from layout toggle)
 function M.compute_and_render(
   original_buf,
   modified_buf,
@@ -67,7 +74,8 @@ function M.compute_and_render(
   original_win,
   modified_win,
   auto_scroll_to_first_hunk,
-  line_range
+  line_range,
+  restore_cursor
 )
   -- Compute diff
   local diff_options = {
@@ -96,19 +104,19 @@ function M.compute_and_render(
   if original_win and modified_win and vim.api.nvim_win_is_valid(original_win) and vim.api.nvim_win_is_valid(modified_win) then
     -- Save cursor position if we need to preserve it (on update)
     local saved_cursor = nil
-    if not auto_scroll_to_first_hunk then
+    if restore_cursor then
+      saved_cursor = restore_cursor
+    elseif not auto_scroll_to_first_hunk then
       saved_cursor = vim.api.nvim_win_get_cursor(modified_win)
     end
 
     -- Step 1: Disable scrollbind while repositioning cursors
     vim.wo[original_win].scrollbind = false
     vim.wo[modified_win].scrollbind = false
-    -- vim.wo[original_win].wrap = false
-    -- vim.wo[modified_win].wrap = false
 
     -- Step 2: Determine target cursor positions
     local orig_cursor, mod_cursor
-    if auto_scroll_to_first_hunk and #lines_diff.changes > 0 then
+    if auto_scroll_to_first_hunk and not restore_cursor and #lines_diff.changes > 0 then
       local target_line
       if line_range then
         -- Find the first hunk overlapping with or nearest to the line range
@@ -130,8 +138,11 @@ function M.compute_and_render(
       orig_cursor = { target_line, 0 }
       mod_cursor = { target_line, 0 }
     elseif saved_cursor then
-      orig_cursor = { saved_cursor[1], 0 }
-      mod_cursor = saved_cursor
+      local mod_line_count = vim.api.nvim_buf_line_count(modified_buf)
+      local orig_line_count = vim.api.nvim_buf_line_count(original_buf)
+      local line = math.min(saved_cursor[1], mod_line_count)
+      orig_cursor = { math.min(line, orig_line_count), 0 }
+      mod_cursor = { line, saved_cursor[2] }
     else
       orig_cursor = { 1, 0 }
       mod_cursor = { 1, 0 }
@@ -141,7 +152,7 @@ function M.compute_and_render(
     M.establish_scrollbind(original_win, modified_win, original_buf, modified_buf, lines_diff, orig_cursor, mod_cursor)
 
     -- Step 4: Center view on first hunk for initial open
-    if auto_scroll_to_first_hunk and #lines_diff.changes > 0 then
+    if auto_scroll_to_first_hunk and not restore_cursor and #lines_diff.changes > 0 then
       if vim.api.nvim_win_is_valid(modified_win) then
         vim.api.nvim_set_current_win(modified_win)
         vim.cmd("normal! zz")
