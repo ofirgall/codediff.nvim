@@ -10,6 +10,63 @@ local keymaps_module = require("codediff.ui.explorer.keymaps")
 local refresh_module = require("codediff.ui.explorer.refresh")
 local welcome = require("codediff.ui.welcome")
 
+--- Walk visible tree nodes and grow the panel if any node is wider than current width.
+--- Only grows, never shrinks (high-water mark stored on explorer.auto_width_value).
+local function maybe_grow_panel(explorer)
+  local explorer_config = config.options.explorer or {}
+  if not explorer_config.auto_width then
+    return
+  end
+  if explorer_config.position ~= "left" then
+    return
+  end
+  if not explorer or not explorer.tree or not explorer.split then
+    return
+  end
+  local winid = explorer.split.winid
+  if not winid or not vim.api.nvim_win_is_valid(winid) then
+    return
+  end
+
+  local max_natural = 0
+  local function walk(parent_node)
+    if not parent_node:has_children() then
+      return
+    end
+    for _, child_id in ipairs(parent_node:get_child_ids()) do
+      local child = explorer.tree:get_node(child_id)
+      if child then
+        local w = nodes_module.compute_natural_width(child)
+        if w > max_natural then
+          max_natural = w
+        end
+        if child:has_children() and child:is_expanded() then
+          walk(child)
+        end
+      end
+    end
+  end
+  for _, root_node in ipairs(explorer.tree:get_nodes()) do
+    local w = nodes_module.compute_natural_width(root_node)
+    if w > max_natural then
+      max_natural = w
+    end
+    if root_node:is_expanded() then
+      walk(root_node)
+    end
+  end
+
+  local min_width = explorer_config.width or 40
+  local target = math.max(min_width, max_natural)
+  local high_water = explorer.auto_width_value or min_width
+  target = math.max(target, high_water)
+
+  if target ~= high_water then
+    explorer.auto_width_value = target
+    vim.api.nvim_win_set_width(winid, target)
+  end
+end
+
 local function should_show_welcome(explorer)
   if not explorer or not explorer.git_root or explorer.dir1 or explorer.dir2 then
     return false
@@ -509,6 +566,7 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
     selected_path = file_data.path
     selected_group = file_data.group
     tree:render()
+    maybe_grow_panel(explorer)
     on_file_select(file_data, opts)
   end
 
@@ -517,10 +575,14 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
     selected_path = nil
     selected_group = nil
     tree:render()
+    maybe_grow_panel(explorer)
   end
 
   -- Setup keymaps (delegated to keymaps module)
   keymaps_module.setup(explorer)
+
+  -- Initial auto-width grow after first render
+  maybe_grow_panel(explorer)
 
   -- Find a file in the status lists, returns (file, group) or (nil, nil)
   local function find_file_in_status(path)
@@ -644,6 +706,7 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
             patch_nodes(root_node)
           end
           explorer.tree:render()
+          maybe_grow_panel(explorer)
         end)
       end)
     end)
@@ -657,6 +720,7 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
       for _, win in ipairs(resized_wins) do
         if win == explorer.winid and vim.api.nvim_win_is_valid(win) then
           explorer.tree:render()
+          maybe_grow_panel(explorer)
           break
         end
       end

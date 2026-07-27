@@ -212,6 +212,9 @@ end
 function M.refresh(explorer)
   local git = require("codediff.core.git")
 
+  -- Reset auto-width high-water mark on full refresh so stale wide entries don't persist
+  explorer.auto_width_value = nil
+
   -- Skip refresh if explorer is hidden
   if explorer.is_hidden then
     return

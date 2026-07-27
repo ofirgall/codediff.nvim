@@ -33,10 +33,16 @@ function M.arrange(tabpage)
   end
   local panel_position = panel_config.position or "left"
 
+  -- Effective panel width: use auto_width high-water mark if enabled
+  local panel_width = panel_config.width or 40
+  if panel_config.auto_width and panel and panel.auto_width_value then
+    panel_width = math.max(panel_width, panel.auto_width_value)
+  end
+
   -- Step 1: Pin panel size (fixed element)
   if panel_visible then
     if panel_position == "left" then
-      vim.api.nvim_win_set_width(panel_win, panel_config.width)
+      vim.api.nvim_win_set_width(panel_win, panel_width)
     else
       vim.api.nvim_win_set_height(panel_win, panel_config.height)
     end
@@ -52,7 +58,7 @@ function M.arrange(tabpage)
     if sole_win then
       if panel_visible then
         if panel_position == "left" then
-          vim.api.nvim_win_set_width(panel_win, panel_config.width)
+          vim.api.nvim_win_set_width(panel_win, panel_width)
         else
           vim.api.nvim_win_set_height(panel_win, panel_config.height)
         end
@@ -113,7 +119,7 @@ function M.arrange(tabpage)
   -- Step 5: Re-pin panel size (undo disturbance from step 4)
   if panel_visible then
     if panel_position == "left" then
-      vim.api.nvim_win_set_width(panel_win, panel_config.width)
+      vim.api.nvim_win_set_width(panel_win, panel_width)
     else
       vim.api.nvim_win_set_height(panel_win, panel_config.height)
     end

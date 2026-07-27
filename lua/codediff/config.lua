@@ -60,6 +60,7 @@ M.defaults = {
     position = "left", -- "left" or "bottom"
     hidden = false, -- Initial visibility state
     width = 40, -- Width when position is "left" (columns)
+    auto_width = true, -- Grow panel width to fit content (never shrinks below `width`)
     height = 15, -- Height when position is "bottom" (lines)
     auto_refresh = true, -- Enable automatic explorer refresh (BufEnter + git watcher)
     view_mode = "list", -- "list" (flat file list) or "tree" (directory tree)

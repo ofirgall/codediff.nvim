@@ -463,4 +463,58 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
   return line
 end
 
+--- Compute the natural (untruncated) display width a file node would need.
+--- Used by auto_width to determine optimal panel size.
+function M.compute_natural_width(node)
+  local data = node.data or {}
+  if data.type == "group" or data.type == "directory" then
+    return 0
+  end
+
+  local explorer_config = config.options.explorer or {}
+  local view_mode = explorer_config.view_mode or "list"
+
+  local indent_width
+  if view_mode == "tree" and data.indent_state then
+    indent_width = #data.indent_state * 2
+  else
+    indent_width = (node:get_depth() - 1) * 2
+  end
+
+  local icon_width = data.icon and (vim.fn.strdisplaywidth(data.icon) + 1) or 0
+
+  local has_stats = data.binary or (data.insertions and data.insertions > 0) or (data.deletions and data.deletions > 0)
+  local show_line_stats = explorer_config.show_line_stats and has_stats
+  local right_width
+
+  if show_line_stats then
+    local status_prefix = ""
+    if data.status == "R" or data.status == "A" or data.status == "D" or data.status == "??" then
+      status_prefix = (data.status_symbol or data.status) .. " "
+    end
+    if data.binary then
+      right_width = #(status_prefix .. "BIN")
+    else
+      local ins = data.insertions or 0
+      local del = data.deletions or 0
+      local parts = {}
+      if ins > 0 then parts[#parts + 1] = "+" .. tostring(ins) end
+      if del > 0 then parts[#parts + 1] = "-" .. tostring(del) end
+      right_width = #(status_prefix .. table.concat(parts, " "))
+    end
+  else
+    right_width = vim.fn.strdisplaywidth(data.status_symbol or "")
+  end
+
+  local full_path = data.path or node.text or ""
+  local filename = full_path:match("([^/]+)$") or full_path
+  local directory = (view_mode == "tree") and "" or full_path:sub(1, -(#filename + 1))
+  local filename_len = vim.fn.strdisplaywidth(filename)
+  local directory_len = vim.fn.strdisplaywidth(directory)
+  local space_len = (directory_len > 0) and 1 or 0
+
+  local status_margin = explorer_config.status_right_margin or 1
+  return indent_width + icon_width + filename_len + space_len + directory_len + right_width + 2 + status_margin
+end
+
 return M
