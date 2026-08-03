@@ -9,6 +9,120 @@ local compat = require("codediff.core.compat")
 -- Dedicated namespace for inline diff (separate from side-by-side namespaces)
 M.ns_inline = vim.api.nvim_create_namespace("codediff-inline")
 
+-- Feature detection: virt_lines_overflow="wrap" (Neovim 0.12+/nightly)
+local supports_virt_lines_wrap = (function()
+  local probe_buf = vim.api.nvim_create_buf(false, true)
+  local ns = vim.api.nvim_create_namespace("")
+  vim.api.nvim_buf_set_lines(probe_buf, 0, -1, false, { "" })
+  local ok = pcall(vim.api.nvim_buf_set_extmark, probe_buf, ns, 0, 0, {
+    virt_lines = { { { " ", "Normal" } } },
+    virt_lines_overflow = "wrap",
+  })
+  vim.api.nvim_buf_delete(probe_buf, { force = true })
+  return ok
+end)()
+
+-- Get the text area width for a window displaying a buffer
+local function get_text_width(bufnr)
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_buf(win) == bufnr then
+      local info = vim.fn.getwininfo(win)
+      if info and info[1] then
+        return vim.api.nvim_win_get_width(win) - info[1].textoff
+      end
+    end
+  end
+  return nil
+end
+
+-- Wrap a single virt_line (array of chunks) into multiple rows at `width`
+-- Returns an array of rows (each row is an array of chunks)
+local function wrap_virt_line(chunks, width, base_hl)
+  if width <= 0 then
+    return { chunks }
+  end
+
+  local rows = {}
+  local cur_row = {}
+  local cur_width = 0
+
+  for _, chunk in ipairs(chunks) do
+    local text, hl = chunk[1], chunk[2]
+    local text_width = vim.api.nvim_strwidth(text)
+
+    if cur_width + text_width <= width then
+      table.insert(cur_row, chunk)
+      cur_width = cur_width + text_width
+    else
+      -- Split this chunk across rows
+      local remaining = text
+      while #remaining > 0 do
+        local avail = width - cur_width
+        if avail <= 0 then
+          -- Pad current row to full width and start new row
+          table.insert(cur_row, { string.rep(" ", width - cur_width), base_hl })
+          table.insert(rows, cur_row)
+          cur_row = {}
+          cur_width = 0
+          avail = width
+        end
+
+        -- Find byte offset for avail display columns
+        local byte_off = 0
+        local cols_used = 0
+        while byte_off < #remaining do
+          local char_len = vim.fn.strlen(vim.fn.strcharpart(remaining:sub(byte_off + 1), 0, 1))
+          if char_len == 0 then
+            char_len = 1
+          end
+          local char = remaining:sub(byte_off + 1, byte_off + char_len)
+          local char_width = vim.api.nvim_strwidth(char)
+          if cols_used + char_width > avail then
+            break
+          end
+          cols_used = cols_used + char_width
+          byte_off = byte_off + char_len
+        end
+
+        if byte_off == 0 then
+          -- Single char wider than remaining space: force it onto a new row
+          if cur_width > 0 then
+            table.insert(cur_row, { string.rep(" ", width - cur_width), base_hl })
+            table.insert(rows, cur_row)
+            cur_row = {}
+            cur_width = 0
+          end
+          -- Take at least one char
+          local char_len = vim.fn.strlen(vim.fn.strcharpart(remaining, 0, 1))
+          if char_len == 0 then
+            char_len = 1
+          end
+          local char = remaining:sub(1, char_len)
+          table.insert(cur_row, { char, hl })
+          cur_width = vim.api.nvim_strwidth(char)
+          remaining = remaining:sub(char_len + 1)
+        else
+          local part = remaining:sub(1, byte_off)
+          table.insert(cur_row, { part, hl })
+          cur_width = cur_width + cols_used
+          remaining = remaining:sub(byte_off + 1)
+        end
+      end
+    end
+  end
+
+  if #cur_row > 0 then
+    -- Pad the last row for hl_eol effect
+    local pad_needed = width - cur_width
+    if pad_needed > 0 then
+      table.insert(cur_row, { string.rep(" ", pad_needed), base_hl })
+    end
+    table.insert(rows, cur_row)
+  end
+
+  return rows
+end
+
 -- Cache for merged highlight groups (syntax fg + diff bg)
 local merged_hl_cache = {}
 
@@ -169,10 +283,7 @@ local function build_highlighted_virt_line(line_text, char_ranges, syntax_hls, b
   -- Build chunks by walking through the line, grouping consecutive positions
   -- with the same effective highlight
   if #line_text == 0 then
-    return {
-      { "", base_hl },
-      { string.rep(" ", 300), base_hl },
-    }
+    return { { " ", base_hl } }
   end
 
   local chunks = {}
@@ -203,9 +314,6 @@ local function build_highlighted_virt_line(line_text, char_ranges, syntax_hls, b
   if chunk_start <= #line_text then
     table.insert(chunks, { line_text:sub(chunk_start), prev_hl })
   end
-
-  -- Pad for full-width background color (simulates hl_eol for virt_lines)
-  table.insert(chunks, { string.rep(" ", 300), base_hl })
 
   return chunks
 end
@@ -407,13 +515,29 @@ function M.render_inline_diff(bufnr, diff_result, original_lines, modified_lines
     -- Step 1: Show deleted/original lines as virtual lines
     if has_original then
       local virt_lines = {}
+      local text_width = not supports_virt_lines_wrap and get_text_width(bufnr) or nil
 
       for orig_line = orig_start, orig_end - 1 do
         local line_text = original_lines[orig_line] or ""
         local char_ranges = get_char_ranges_for_orig_line(mapping.inner_changes, orig_line, original_lines)
         local line_syntax = syntax_hls[orig_line]
         local chunks = build_highlighted_virt_line(line_text, char_ranges, line_syntax)
-        table.insert(virt_lines, chunks)
+
+        if text_width and vim.api.nvim_strwidth(line_text) > text_width then
+          local wrapped_rows = wrap_virt_line(chunks, text_width, "CodeDiffLineDelete")
+          for _, row in ipairs(wrapped_rows) do
+            table.insert(virt_lines, row)
+          end
+        else
+          -- Pad to full width for hl_eol effect
+          if text_width then
+            local pad = text_width - vim.api.nvim_strwidth(line_text)
+            if pad > 0 then
+              table.insert(chunks, { string.rep(" ", pad), "CodeDiffLineDelete" })
+            end
+          end
+          table.insert(virt_lines, chunks)
+        end
       end
 
       -- Anchor: place virtual lines above mod_start (or at end if pure deletion past buffer)
@@ -427,11 +551,16 @@ function M.render_inline_diff(bufnr, diff_result, original_lines, modified_lines
         anchor_line = math.max(anchor_line, 0)
       end
 
-      pcall(vim.api.nvim_buf_set_extmark, bufnr, M.ns_inline, anchor_line, 0, {
+      local extmark_opts = {
         virt_lines = virt_lines,
         virt_lines_above = true,
         priority = highlight_priority,
-      })
+      }
+      if supports_virt_lines_wrap then
+        extmark_opts.virt_lines_overflow = "wrap"
+      end
+
+      pcall(vim.api.nvim_buf_set_extmark, bufnr, M.ns_inline, anchor_line, 0, extmark_opts)
     end
 
     -- Step 2: Highlight added/modified lines on the real buffer
