@@ -76,4 +76,23 @@ function M.apply(files, ignore_patterns)
   return filtered
 end
 
+-- Convert file_filter.ignore entries to git pathspec exclusion args.
+-- Plain globs get a ":!" prefix; entries already starting with ":" are
+-- assumed to be full pathspecs (e.g. ":(exclude,attr:linguist-generated=true)")
+-- and are passed through unchanged.
+function M.build_exclude_pathspecs(ignore_patterns)
+  if not ignore_patterns or #ignore_patterns == 0 then
+    return {}
+  end
+  local pathspecs = {}
+  for _, pattern in ipairs(ignore_patterns) do
+    if pattern:sub(1, 1) == ":" then
+      pathspecs[#pathspecs + 1] = pattern
+    else
+      pathspecs[#pathspecs + 1] = ":!" .. pattern
+    end
+  end
+  return pathspecs
+end
+
 return M

@@ -328,6 +328,11 @@ local function handle_explorer(revision, revision2, global_opts)
       focus_file = git.get_relative_path(current_file, git_root)
     end
 
+    local filter = require("codediff.ui.explorer.filter")
+    local explorer_config = config.options.explorer or {}
+    local file_filter = explorer_config.file_filter or {}
+    local pathspecs = filter.build_exclude_pathspecs(file_filter.ignore)
+
     local function process_status(err_status, status_result, original_rev, modified_rev)
       vim.schedule(function()
         if err_status then
@@ -385,7 +390,7 @@ local function handle_explorer(revision, revision2, global_opts)
 
           git.get_diff_revisions(commit_hash, commit_hash2, git_root, function(err_status, status_result)
             process_status(err_status, status_result, commit_hash, commit_hash2)
-          end)
+          end, pathspecs)
         end)
       end)
     elseif revision then
@@ -401,14 +406,14 @@ local function handle_explorer(revision, revision2, global_opts)
         -- Get diff between revision and working tree
         git.get_diff_revision(commit_hash, git_root, function(err_status, status_result)
           process_status(err_status, status_result, commit_hash, "WORKING")
-        end)
+        end, pathspecs)
       end)
     else
       -- Get git status (current changes)
       git.get_status(git_root, function(err_status, status_result)
         -- Pass nil for revisions to enable "Status Mode" in explorer (separate Staged/Unstaged groups)
         process_status(err_status, status_result, nil, nil)
-      end)
+      end, pathspecs)
     end
   end
 

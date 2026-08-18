@@ -182,4 +182,43 @@ describe("Explorer File Filter", function()
       assert.is_false(matches_any_pattern("app.js", patterns))
     end)
   end)
+
+  describe("build_exclude_pathspecs", function()
+    local build = filter.build_exclude_pathspecs
+
+    it("returns empty table for nil input", function()
+      assert.same({}, build(nil))
+    end)
+
+    it("returns empty table for empty list", function()
+      assert.same({}, build({}))
+    end)
+
+    it("prepends :! to plain glob patterns", function()
+      assert.same({ ":!.jj/**" }, build({ ".jj/**" }))
+    end)
+
+    it("passes through patterns starting with colon", function()
+      local ps = ":(exclude,attr:linguist-generated=true)"
+      assert.same({ ps }, build({ ps }))
+    end)
+
+    it("handles mixed plain globs and pathspecs", function()
+      local result = build({
+        ".git/**",
+        "*.lock",
+        ":(exclude,attr:linguist-generated=true)",
+      })
+      assert.same({
+        ":!.git/**",
+        ":!*.lock",
+        ":(exclude,attr:linguist-generated=true)",
+      }, result)
+    end)
+
+    it("converts default ignore patterns", function()
+      local result = build({ ".git/**", ".jj/**" })
+      assert.same({ ":!.git/**", ":!.jj/**" }, result)
+    end)
+  end)
 end)

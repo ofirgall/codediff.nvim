@@ -382,17 +382,22 @@ function M.refresh(explorer)
     end)
   end
 
+  -- Build pathspec exclusions from file_filter.ignore config
+  local filter = require("codediff.ui.explorer.filter")
+  local file_filter = explorer_config.file_filter or {}
+  local pathspecs = filter.build_exclude_pathspecs(file_filter.ignore)
+
   -- Use appropriate function based on mode
   if not explorer.git_root then
     local dir_mod = require("codediff.core.dir")
     local diff = dir_mod.diff_directories(explorer.dir1, explorer.dir2)
     process_with_stats(nil, diff.status_result)
   elseif explorer.base_revision and explorer.target_revision and explorer.target_revision ~= "WORKING" then
-    git.get_diff_revisions(explorer.base_revision, explorer.target_revision, explorer.git_root, process_with_stats)
+    git.get_diff_revisions(explorer.base_revision, explorer.target_revision, explorer.git_root, process_with_stats, pathspecs)
   elseif explorer.base_revision then
-    git.get_diff_revision(explorer.base_revision, explorer.git_root, process_with_stats)
+    git.get_diff_revision(explorer.base_revision, explorer.git_root, process_with_stats, pathspecs)
   else
-    git.get_status(explorer.git_root, process_with_stats)
+    git.get_status(explorer.git_root, process_with_stats, pathspecs)
   end
 end
 
