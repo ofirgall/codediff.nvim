@@ -168,6 +168,12 @@ function M.setup()
     default = true,
   })
 
+  -- Explorer normal text
+  vim.api.nvim_set_hl(0, "CodeDiffExplorerNormal", {
+    link = "Normal",
+    default = true,
+  })
+
   -- Explorer directory text (smaller and dimmed)
   vim.api.nvim_set_hl(0, "ExplorerDirectorySmall", {
     link = "Comment",

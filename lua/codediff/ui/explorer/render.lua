@@ -150,6 +150,7 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
       cursorbind = false,
       winfixwidth = true,
       winfixheight = true,
+      winhighlight = "Normal:CodeDiffExplorerNormal",
     },
   })
 
