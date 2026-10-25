@@ -223,5 +223,47 @@ describe("Explorer line stats", function()
       local text = line:content()
       assert.is_truthy(text:match("%?%?"), "Should show ?? status, got: " .. text)
     end)
+
+    it("truncates a long filename to keep line stats within the width", function()
+      config.options.explorer.show_line_stats = true
+
+      local node = make_file_node({
+        path = "src/a_really_long_file_name_that_does_not_fit_in_the_panel.lua",
+        status = "M",
+        icon = "",
+        icon_color = "Normal",
+        status_symbol = "M",
+        status_color = "CodeDiffStatusModified",
+        group = "unstaged",
+        insertions = 123,
+        deletions = 45,
+      })
+
+      local line = nodes_module.prepare_node(node, 40, nil, nil)
+      local text = line:content()
+      assert.is_true(vim.fn.strdisplaywidth(text) <= 40, "Line should fit in 40 cells, got: " .. text)
+      assert.is_truthy(text:match("%.%.%."), "Filename should be truncated, got: " .. text)
+      assert.is_truthy(text:match("%+123 %-45%s*$"), "Stats should be fully visible, got: " .. text)
+    end)
+
+    it("truncates multibyte filenames on character boundaries", function()
+      config.options.explorer.show_line_stats = false
+
+      local node = make_file_node({
+        path = string.rep("é", 60) .. ".lua",
+        status = "M",
+        icon = "",
+        icon_color = "Normal",
+        status_symbol = "M",
+        status_color = "CodeDiffStatusModified",
+        group = "unstaged",
+      })
+
+      local line = nodes_module.prepare_node(node, 30, nil, nil)
+      local text = line:content()
+      assert.is_true(vim.fn.strdisplaywidth(text) <= 30, "Line should fit in 30 cells, got: " .. text)
+      assert.is_truthy(text:find("é...", 1, true), "Should cut between characters, got: " .. text)
+      assert.is_truthy(text:match("M%s*$"))
+    end)
   end)
 end)

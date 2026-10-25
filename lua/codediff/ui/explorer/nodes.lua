@@ -248,6 +248,30 @@ function M.create_tree_file_nodes(files, git_root, group)
   return build_nodes(dir_tree, "", {})
 end
 
+-- Truncate str to fit within max_width display cells, ending with "..." when there is room for it
+local function truncate_to_width(str, max_width)
+  local ellipsis = "..."
+  local ellipsis_width = vim.fn.strdisplaywidth(ellipsis)
+  local keep_width = max_width > ellipsis_width and (max_width - ellipsis_width) or max_width
+
+  -- Truncate by display width, not byte index
+  local byte_pos = 0
+  local accumulated_width = 0
+  for _, char in ipairs(vim.fn.split(str, "\\zs")) do
+    local char_width = vim.fn.strdisplaywidth(char)
+    if accumulated_width + char_width > keep_width then
+      break
+    end
+    accumulated_width = accumulated_width + char_width
+    byte_pos = byte_pos + #char
+  end
+
+  if max_width > ellipsis_width then
+    return str:sub(1, byte_pos) .. ellipsis
+  end
+  return str:sub(1, byte_pos)
+end
+
 -- Prepare node for rendering (format display)
 function M.prepare_node(node, max_width, selected_path, selected_group)
   local line = Line()
@@ -397,25 +421,15 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
       -- Truncate directory from the right (keep the start)
       local available_for_dir = available_for_content - filename_len - space_len
       if available_for_dir > 3 then
-        local ellipsis = "..."
-        local chars_to_keep = available_for_dir - vim.fn.strdisplaywidth(ellipsis)
-
-        -- Truncate directory by display width, not byte index
-        local byte_pos = 0
-        local accumulated_width = 0
-        for char in vim.gsplit(directory, "") do
-          local char_width = vim.fn.strdisplaywidth(char)
-          if accumulated_width + char_width > chars_to_keep then
-            break
-          end
-          accumulated_width = accumulated_width + char_width
-          byte_pos = byte_pos + #char
-        end
-        directory = directory:sub(1, byte_pos) .. ellipsis
+        directory = truncate_to_width(directory, available_for_dir)
       else
         -- Not enough space for directory, just show filename
         directory = ""
         space_len = 0
+        -- Truncate the filename too rather than pushing the status/stats off-screen
+        if filename_len > available_for_content then
+          filename = truncate_to_width(filename, math.max(0, available_for_content))
+        end
       end
     end
 
