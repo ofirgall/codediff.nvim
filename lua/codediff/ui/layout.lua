@@ -33,10 +33,23 @@ function M.arrange(tabpage)
   end
   local panel_position = panel_config.position or "left"
 
-  -- Effective panel width: use auto_width high-water mark if enabled
+  -- Effective panel width: a manual resize wins, else the auto_width high-water mark
   local panel_width = panel_config.width or 40
-  if panel_config.auto_width and panel and panel.auto_width_value then
-    panel_width = math.max(panel_width, panel.auto_width_value)
+  if panel_config.auto_width and panel then
+    if panel.manual_width then
+      panel_width = panel.manual_width
+    elseif panel.auto_width_value then
+      panel_width = math.max(panel_width, panel.auto_width_value)
+    end
+  end
+
+  -- Record the width we applied so the panel's WinResized handler doesn't
+  -- mistake it for a manual resize
+  local function record_panel_width()
+    if panel_visible and panel_position == "left" then
+      panel.applied_winid = panel_win
+      panel.applied_width = vim.api.nvim_win_get_width(panel_win)
+    end
   end
 
   -- Step 1: Pin panel size (fixed element)
@@ -64,11 +77,13 @@ function M.arrange(tabpage)
         end
       end
     end
+    record_panel_width()
     return
   end
 
   -- Both windows must be valid for two-pane layout
   if not orig_valid or not mod_valid then
+    record_panel_width()
     return
   end
 
@@ -124,6 +139,7 @@ function M.arrange(tabpage)
       vim.api.nvim_win_set_height(panel_win, panel_config.height)
     end
   end
+  record_panel_width()
 end
 
 return M

@@ -32,6 +32,7 @@ function M.setup(explorer)
           node:expand()
         end
         tree:render()
+        require("codediff.ui.explorer.render").fit_panel_width(explorer)
       else
         -- File selected
         if node.data then
@@ -177,6 +178,9 @@ function M.setup(explorer)
     tree = tree,
     keymaps = explorer_keymaps,
     bufnr = split.bufnr,
+    on_render = function()
+      require("codediff.ui.explorer.render").fit_panel_width(explorer)
+    end,
   })
 
   -- Note: next_file/prev_file keymaps are set via view/keymaps.lua:setup_all_keymaps()

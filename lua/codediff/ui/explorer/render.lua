@@ -10,8 +10,10 @@ local keymaps_module = require("codediff.ui.explorer.keymaps")
 local refresh_module = require("codediff.ui.explorer.refresh")
 local welcome = require("codediff.ui.welcome")
 
---- Walk visible tree nodes and grow the panel if any node is wider than current width.
---- Only grows, never shrinks (high-water mark stored on explorer.auto_width_value).
+--- Walk visible tree nodes and resize the panel to fit the widest one.
+--- Grows only, via the high-water mark on explorer.auto_width_value; clearing that
+--- mark (full refresh) lets the panel shrink back to fit. Disabled once the user
+--- resizes the panel manually (explorer.manual_width).
 local function maybe_grow_panel(explorer)
   local explorer_config = config.options.explorer or {}
   if not explorer_config.auto_width then
@@ -20,7 +22,7 @@ local function maybe_grow_panel(explorer)
   if explorer_config.position ~= "left" then
     return
   end
-  if not explorer or not explorer.tree or not explorer.split then
+  if not explorer or not explorer.tree or not explorer.split or explorer.manual_width then
     return
   end
   local winid = explorer.split.winid
@@ -61,9 +63,28 @@ local function maybe_grow_panel(explorer)
   local high_water = explorer.auto_width_value or min_width
   target = math.max(target, high_water)
 
-  if target ~= high_water then
-    explorer.auto_width_value = target
+  explorer.auto_width_value = target
+  if target ~= vim.api.nvim_win_get_width(winid) then
     vim.api.nvim_win_set_width(winid, target)
+  end
+  -- Remember what we applied so WinResized can tell user resizes from ours
+  explorer.applied_winid = winid
+  explorer.applied_width = vim.api.nvim_win_get_width(winid)
+end
+
+M.fit_panel_width = maybe_grow_panel
+
+--- A width change we didn't apply ourselves is a manual resize:
+--- stop auto-sizing and keep the user's width from now on.
+function M.detect_manual_resize(explorer)
+  local win = explorer.winid
+  if not win or win ~= explorer.applied_winid or not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  local width = vim.api.nvim_win_get_width(win)
+  if explorer.applied_width ~= width then
+    explorer.manual_width = width
+    explorer.applied_width = width
   end
 end
 
@@ -720,6 +741,7 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
       local resized_wins = vim.v.event.windows or {}
       for _, win in ipairs(resized_wins) do
         if win == explorer.winid and vim.api.nvim_win_is_valid(win) then
+          M.detect_manual_resize(explorer)
           explorer.tree:render()
           maybe_grow_panel(explorer)
           break

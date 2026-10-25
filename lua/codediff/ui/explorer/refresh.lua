@@ -212,9 +212,6 @@ end
 function M.refresh(explorer)
   local git = require("codediff.core.git")
 
-  -- Reset auto-width high-water mark on full refresh so stale wide entries don't persist
-  explorer.auto_width_value = nil
-
   -- Skip refresh if explorer is hidden
   if explorer.is_hidden then
     return
@@ -274,6 +271,11 @@ function M.refresh(explorer)
       restore_collapsed_state(explorer.tree, collapsed_state, root_nodes)
 
       explorer.tree:render()
+
+      -- Reset the auto-width high-water mark and refit, so the panel can shrink
+      -- back once stale wide entries are gone
+      explorer.auto_width_value = nil
+      require("codediff.ui.explorer.render").fit_panel_width(explorer)
 
       -- Update status result for file selection logic
       explorer.status_result = status_result

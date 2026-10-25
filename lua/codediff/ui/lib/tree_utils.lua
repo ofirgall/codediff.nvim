@@ -43,7 +43,7 @@ function M.get_root_node(tree)
 end
 
 -- Setup all fold-related keymaps on a tree buffer.
--- @param opts table { tree, keymaps, bufnr }
+-- @param opts table { tree, keymaps, bufnr, on_render? }
 function M.setup_fold_keymaps(opts)
   local tree = opts.tree
   local keymaps = opts.keymaps
@@ -51,6 +51,9 @@ function M.setup_fold_keymaps(opts)
 
   local function update_tree_view(node)
     tree:render()
+    if opts.on_render then
+      opts.on_render()
+    end
     local winid = vim.fn.bufwinid(bufnr)
     if node._line and winid ~= -1 then
       vim.api.nvim_win_set_cursor(winid, { node._line, 0 })
