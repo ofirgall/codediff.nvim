@@ -115,6 +115,13 @@ Auto-viewed group names SHALL use a distinct highlight, yellow by default.
 - **WHEN** the explorer shows the auto-viewed `Lockfiles` group
 - **THEN** its name uses `CodeDiffExplorerGroupAutoViewed`
 
+### Requirement: Marking the open file viewed moves to the next unviewed file
+When the file shown in the diff panes is marked viewed, the next unviewed file in explorer order SHALL open, wrapping around to earlier files. A setup option SHALL turn this off. When no unviewed file is left, the current file SHALL stay open and the user SHALL be told every file is viewed.
+
+#### Scenario: Viewed from the diff pane
+- **WHEN** `server/a.go` is open and the user marks it viewed while `server/c.go` is unviewed
+- **THEN** `server/c.go` opens
+
 ### Requirement: Navigation skips viewed files
 `]f`/`[f` SHALL move to the next or previous unviewed file in explorer order, including files in collapsed groups. A setup option SHALL turn the skipping off. When every file is viewed, navigation SHALL report that and stay on the current file.
 

@@ -224,6 +224,7 @@ Setup entry point:
         auto_mark_viewed = true,
         collapse_groups = false,
         skip_viewed = true,
+        next_on_viewed = true,
         viewed_icon = "\u{f00c}",
         regex_engine = "auto",
         debug = false,
@@ -366,6 +367,8 @@ Options (`explorer.pr_review`) ~
                       collapsed. User collapse state is kept across
                       refreshes.
   `skip_viewed`       `]f` / `[f` skip viewed files.
+  `next_on_viewed`    Marking the file shown in the diff panes viewed opens
+                      the next unviewed file (wrapping around).
   `viewed_icon`       Marker for viewed files.
   `regex_engine`      How `paths` patterns are matched. `"auto"` (default):
                       `node` when it is on `$PATH`, so patterns are native
@@ -399,7 +402,9 @@ Viewed state ~
       Toggle the file, directory or group under the cursor. If any file below
       is unviewed all become viewed, otherwise all become unviewed.
   `<leader>v` (`keymaps.view.toggle_viewed`)
-      Toggle the file shown in the diff panes.
+      Toggle the file shown in the diff panes. When that file becomes
+      viewed (by either key) the next unviewed file opens, unless
+      `next_on_viewed` is false.
   `]f` / `[f`
       Skip viewed files (also inside collapsed groups, which are expanded to
       show the target) when `skip_viewed` is true. With every file viewed,

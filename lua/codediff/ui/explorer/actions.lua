@@ -22,7 +22,9 @@ end
 -- Review-mode navigation (explorer.review_ctx): walks files in collapsed groups too, skips viewed
 -- files when pr_review.skip_viewed, and expands the target's ancestors before moving the cursor.
 -- dir: 1 = next, -1 = previous
-local function navigate_review(explorer, dir)
+-- opts.unviewed: always skip viewed files and wrap around (used after marking the current file viewed)
+local function navigate_review(explorer, dir, opts)
+  opts = opts or {}
   local tree = explorer.tree
   local all_files = refresh_module.get_all_files(tree, { include_collapsed = true })
   local n = #all_files
@@ -31,7 +33,7 @@ local function navigate_review(explorer, dir)
     return
   end
   local pr = (config.options.explorer or {}).pr_review or {}
-  local skip_viewed = pr.skip_viewed ~= false
+  local skip_viewed = opts.unviewed or pr.skip_viewed ~= false
 
   local current_index = 0
   if explorer.current_file_path then
@@ -61,7 +63,7 @@ local function navigate_review(explorer, dir)
       end
     end
   else
-    local cycle = config.options.diff.cycle_next_file
+    local cycle = opts.unviewed or config.options.diff.cycle_next_file
     for step = 1, n - 1 do
       local idx = current_index + dir * step
       if idx > n or idx < 1 then
@@ -121,6 +123,13 @@ local function navigate_review(explorer, dir)
     end
   end
   explorer.on_file_select(target.data)
+end
+
+-- Open the next unviewed file after the current one, wrapping around (review mode only)
+function M.next_unviewed(explorer)
+  if explorer.review_ctx then
+    return navigate_review(explorer, 1, { unviewed = true })
+  end
 end
 
 -- Navigate to next file in explorer

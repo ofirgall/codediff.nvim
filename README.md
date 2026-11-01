@@ -133,6 +133,7 @@ https://github.com/user-attachments/assets/64c41f01-dffe-4318-bce4-16eec8de356e
         auto_mark_viewed = true, -- Files in autoViewed / Generated groups start viewed
         collapse_groups = false, -- true: every review group starts collapsed (fully viewed groups always do)
         skip_viewed = true,      -- ]f / [f skip viewed files
+        next_on_viewed = true,   -- marking the open file viewed opens the next unviewed file
         viewed_icon = "\u{f00c}", -- Marker for viewed files
         regex_engine = "auto",   -- "auto" (node if found, else vim), "node", or "vim"
         debug = false,           -- Log how review groups are loaded ([codediff:review] messages)
@@ -371,7 +372,7 @@ Rules live in `.github/pr-groups.json` (or `.github/pr-groups.jsonc`), the same 
 - **Config source**: the config is read from the base revision of the comparison, not from the reviewed branch. For `main...HEAD` that is the merge-base.
 - **Override**: set `explorer.pr_review.groups` in `setup()` to a Lua table with the same shape to use it for every repo instead of the repo file. The Generated group still applies.
 - **No rules**: with no valid config and no generated files you get the usual single `Changes` group.
-- **Options** (`explorer.pr_review`): `enabled` (set `false` to restore the plain `Changes` group), `groups`, `auto_mark_viewed`, `collapse_groups`, `skip_viewed`, `viewed_icon`, `debug` (logs each step of loading the groups as `[codediff:review]` messages: the base revision, every `git show <base>:<path>` attempt with git's error, the parse result and the groups built; check `:messages`). Fully viewed groups (usually the auto-viewed ones) start collapsed, and `collapse_groups = true` collapses all groups. Your own collapse state is kept across refreshes.
+- **Options** (`explorer.pr_review`): `enabled` (set `false` to restore the plain `Changes` group), `groups`, `auto_mark_viewed`, `collapse_groups`, `skip_viewed`, `next_on_viewed`, `viewed_icon`, `debug` (logs each step of loading the groups as `[codediff:review]` messages: the base revision, every `git show <base>:<path>` attempt with git's error, the parse result and the groups built; check `:messages`). Fully viewed groups (usually the auto-viewed ones) start collapsed, and `collapse_groups = true` collapses all groups. Your own collapse state is kept across refreshes.
 
 ```lua
 require("codediff").setup({
@@ -395,6 +396,7 @@ In revision mode every changed file can be marked as viewed, which keeps track o
 - **Explorer `v`** (`keymaps.explorer.toggle_viewed`): toggles the file, directory or group under the cursor. On a directory or group, if any file is unviewed they all become viewed, otherwise they all become unviewed.
 - **Diff panes `<leader>v`** (`keymaps.view.toggle_viewed`): toggles the file you are looking at.
 - **Navigation**: `]f` / `[f` skip viewed files (including files inside collapsed groups, which are expanded to show the target) while `skip_viewed` is true. When every file is viewed, `All files viewed` is shown and the current file stays open.
+- **Next on viewed**: when the file shown in the diff panes gets marked viewed (`<leader>v`, or `v` on it or on its directory/group), the next unviewed file opens, wrapping around to earlier ones. Set `next_on_viewed = false` to stay on the file.
 - **Auto-viewed groups** (`autoViewed: true` and Generated) start viewed while `auto_mark_viewed` is true. Un-viewing such a file sticks for that file diff.
 - **Identity**: a file is viewed only while both sides of its diff are unchanged (it is keyed by path plus the old and new blob ids). A new commit that touches the file, or an edit to it when comparing against the working tree, makes it unviewed again; commits touching other files do not. State is shared by every review with the same file diff, whatever the revisions are called (`main...feature` and the two resolved SHAs).
 - **Storage**: one JSON file per repository under `stdpath("state")/codediff/viewed/` (named by a hash of the repo root), pruned after 90 days. If it cannot be read or written you get one warning and the review continues with in-memory state.

@@ -79,6 +79,7 @@ M.defaults = {
       auto_mark_viewed = true, -- Files in autoViewed/Generated groups start viewed
       collapse_groups = false, -- true: every review group starts collapsed (fully viewed groups always do)
       skip_viewed = true, -- ]f/[f skip viewed files
+      next_on_viewed = true, -- marking the open file viewed opens the next unviewed file
       viewed_icon = "\u{f00c}", -- Marker shown before viewed files
       regex_engine = "auto", -- "auto": node (native JS regex) if on PATH, else vim translator; "node"; "vim"
       debug = false, -- Log how review groups are loaded (config lookup, groups, generated files) to :messages

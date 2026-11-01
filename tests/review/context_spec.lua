@@ -27,7 +27,7 @@ end
 describe("review config defaults", function()
   it("exposes pr_review options and viewed keymaps", function()
     local d = config.defaults
-    assert.same({ enabled = true, auto_mark_viewed = true, collapse_groups = false, skip_viewed = true, viewed_icon = "\u{f00c}", regex_engine = "auto", debug = false }, d.explorer.pr_review)
+    assert.same({ enabled = true, auto_mark_viewed = true, collapse_groups = false, skip_viewed = true, next_on_viewed = true, viewed_icon = "\u{f00c}", regex_engine = "auto", debug = false }, d.explorer.pr_review)
     assert.equals("v", d.keymaps.explorer.toggle_viewed)
     assert.equals("<leader>v", d.keymaps.view.toggle_viewed)
   end)

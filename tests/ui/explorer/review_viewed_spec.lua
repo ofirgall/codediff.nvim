@@ -370,6 +370,7 @@ describe("explorer viewed state", function()
   end)
 
   it("toggles the current file from the modified pane", function()
+    config.options.explorer.pr_review.next_on_viewed = false
     grouped_repo()
     local explorer = open_grouped()
     local c = file_node(explorer, "server/c.go")
@@ -386,6 +387,45 @@ describe("explorer viewed state", function()
     assert.truthy(buf_line(explorer, line_of(explorer, c)):match("V "))
     vim.api.nvim_feedkeys(vim.keycode(config.options.keymaps.view.toggle_viewed), "x", false)
     assert.is_false(c.data.viewed)
+  end)
+
+  describe("next_on_viewed", function()
+    local function select(explorer, path)
+      explorer.on_file_select(file_node(explorer, path).data)
+      assert.is_true(vim.wait(10000, function()
+        return explorer.current_file_path == path
+      end, 50))
+      vim.wait(500) -- diff buffers and their keymaps settle
+    end
+
+    it("opens the next unviewed file when the open file is marked viewed, wrapping around", function()
+      grouped_repo()
+      local explorer = open_grouped()
+      select(explorer, "server/a.go")
+      local _, mod_win = lifecycle.get_windows(explorer.tabpage)
+      vim.api.nvim_set_current_win(mod_win)
+      vim.api.nvim_feedkeys(vim.keycode(config.options.keymaps.view.toggle_viewed), "x", false)
+      assert.is_true(file_node(explorer, "server/a.go").data.viewed)
+      assert.equals("server/c.go", explorer.current_file_path)
+
+      -- marking another file does not move
+      viewed_ui.set_viewed(explorer, { file_node(explorer, "web/d.js") }, true)
+      assert.equals("server/c.go", explorer.current_file_path)
+
+      -- wraps around past the end to the first unviewed file
+      select(explorer, "web/b.js")
+      viewed_ui.toggle_current(explorer)
+      assert.equals("server/c.go", explorer.current_file_path)
+    end)
+
+    it("stays on the file when next_on_viewed is false", function()
+      config.options.explorer.pr_review.next_on_viewed = false
+      grouped_repo()
+      local explorer = open_grouped()
+      select(explorer, "server/a.go")
+      viewed_ui.toggle_current(explorer)
+      assert.equals("server/a.go", explorer.current_file_path)
+    end)
   end)
 
   describe("auto-viewed defaults", function()

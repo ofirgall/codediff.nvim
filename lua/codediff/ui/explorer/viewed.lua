@@ -187,6 +187,16 @@ function M.set_viewed(explorer, file_nodes, viewed)
     modeline = false,
     data = { tabpage = explorer.tabpage, paths = paths, viewed = viewed },
   })
+  -- The file in the diff panes was just marked viewed: move on to the next unviewed one
+  local pr = (require("codediff.config").options.explorer or {}).pr_review or {}
+  if viewed and pr.next_on_viewed ~= false and explorer.current_file_path then
+    for _, node in ipairs(file_nodes) do
+      if node.data.path == explorer.current_file_path and node.data.group == explorer.current_file_group and node.data.viewed then
+        require("codediff.ui.explorer.actions").next_unviewed(explorer)
+        break
+      end
+    end
+  end
   return paths
 end
 
