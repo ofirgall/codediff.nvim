@@ -316,6 +316,8 @@ local function handle_history(range, file_path, flags, line_range, global_opts)
 end
 
 local function handle_explorer(revision, revision2, global_opts)
+  -- Load on the main loop: open_explorer runs in libuv callbacks, where require cannot search the runtimepath
+  local review_context = require("codediff.review.context")
   -- Try buffer path first (consistent with original behavior), fallback to cwd
   local current_buf = vim.api.nvim_get_current_buf()
   local current_file = vim.api.nvim_buf_get_name(current_buf)
@@ -333,6 +335,8 @@ local function handle_explorer(revision, revision2, global_opts)
     local file_filter = explorer_config.file_filter or {}
     local pathspecs = filter.build_exclude_pathspecs(file_filter.ignore)
 
+    local pending_review = nil -- started right before the status fetch (revision mode only)
+
     local function process_status(err_status, status_result, original_rev, modified_rev)
       vim.schedule(function()
         if err_status then
@@ -347,26 +351,36 @@ local function handle_explorer(revision, revision2, global_opts)
           return
         end
 
-        -- Create explorer view with empty diff panes initially
+        -- Review groups context: loads alongside the status fetch (started below)
+        local function create_view(review_ctx)
+          ---@type SessionConfig
+          local session_config = {
+            mode = "explorer",
+            git_root = git_root,
+            original_path = "", -- Empty indicates explorer mode placeholder
+            modified_path = "",
+            original_revision = original_rev,
+            modified_revision = modified_rev,
+            layout = global_opts.layout,
+            explorer_data = {
+              status_result = status_result,
+              focus_file = focus_file, -- Focus on current file if changed
+              review_ctx = review_ctx,
+            },
+          }
 
-        ---@type SessionConfig
-        local session_config = {
-          mode = "explorer",
-          git_root = git_root,
-          original_path = "", -- Empty indicates explorer mode placeholder
-          modified_path = "",
-          original_revision = original_rev,
-          modified_revision = modified_rev,
-          layout = global_opts.layout,
-          explorer_data = {
-            status_result = status_result,
-            focus_file = focus_file, -- Focus on current file if changed
-          },
-        }
+          -- view.create handles everything: tab, windows, explorer, and lifecycle
+          -- Empty lines and paths - explorer will populate via first file selection
+          view.create(session_config, "")
+        end
 
-        -- view.create handles everything: tab, windows, explorer, and lifecycle
-        -- Empty lines and paths - explorer will populate via first file selection
-        view.create(session_config, "")
+        if pending_review then
+          pending_review:finish(status_result.unstaged, function(_, review_ctx)
+            create_view(review_ctx)
+          end)
+        else
+          create_view(nil)
+        end
       end)
     end
 
@@ -388,6 +402,7 @@ local function handle_explorer(revision, revision2, global_opts)
             return
           end
 
+          pending_review = review_context.start({ git_root = git_root, base_revision = commit_hash, target_revision = commit_hash2 })
           git.get_diff_revisions(commit_hash, commit_hash2, git_root, function(err_status, status_result)
             process_status(err_status, status_result, commit_hash, commit_hash2)
           end, pathspecs)
@@ -404,6 +419,7 @@ local function handle_explorer(revision, revision2, global_opts)
         end
 
         -- Get diff between revision and working tree
+        pending_review = review_context.start({ git_root = git_root, base_revision = commit_hash, target_revision = "WORKING" })
         git.get_diff_revision(commit_hash, git_root, function(err_status, status_result)
           process_status(err_status, status_result, commit_hash, "WORKING")
         end, pathspecs)

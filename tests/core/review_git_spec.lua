@@ -1,0 +1,235 @@
+-- Tests for review-group git plumbing: config at revision, linguist-generated, diff blobs
+local git = require("codediff.core.git")
+
+local function create_repo()
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  local function run(...)
+    return vim.fn.system(vim.list_extend({ "git", "-C", dir }, { ... }))
+  end
+  run("init")
+  run("config", "user.email", "test@test.com")
+  run("config", "user.name", "test")
+  run("config", "commit.gpgsign", "false")
+  return dir, run
+end
+
+local function write(dir, rel, lines)
+  vim.fn.mkdir(vim.fn.fnamemodify(dir .. "/" .. rel, ":h"), "p")
+  vim.fn.writefile(type(lines) == "table" and lines or { lines }, dir .. "/" .. rel)
+end
+
+local function await(fn, ...)
+  local done, e, r = false, nil, nil
+  local args = vim.F.pack_len(...)
+  args[args.n + 1] = function(err, res)
+    e, r, done = err, res, true
+  end
+  fn(unpack(args, 1, args.n + 1))
+  vim.wait(5000, function() return done end)
+  assert.is_true(done, "callback should complete")
+  return e, r
+end
+
+local function head(run)
+  return vim.trim(run("rev-parse", "HEAD"))
+end
+
+local function blob(run, spec)
+  return vim.trim(run("rev-parse", spec))
+end
+
+describe("get_review_config", function()
+  it("config on base only", function()
+    local dir, run = create_repo()
+    write(dir, ".github/pr-groups.json", '{"groups":[]}')
+    write(dir, "a.txt", "a")
+    run("add", ".")
+    run("commit", "-m", "base")
+    local base = head(run)
+    run("rm", "-q", ".github/pr-groups.json")
+    run("commit", "-m", "remove")
+    local target = head(run)
+
+    local err, res = await(git.get_review_config, base, dir)
+    assert.is_nil(err)
+    assert.equal(".github/pr-groups.json", res.path)
+    assert.equal('{"groups":[]}\n', res.text)
+
+    err, res = await(git.get_review_config, target, dir)
+    assert.is_nil(err)
+    assert.is_nil(res)
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it("config on target only", function()
+    local dir, run = create_repo()
+    write(dir, "a.txt", "a")
+    run("add", ".")
+    run("commit", "-m", "base")
+    local base = head(run)
+    write(dir, ".github/pr-groups.json", "{}")
+    run("add", ".")
+    run("commit", "-m", "add config")
+    local target = head(run)
+
+    local err, res = await(git.get_review_config, base, dir)
+    assert.is_nil(err)
+    assert.is_nil(res)
+    err, res = await(git.get_review_config, target, dir)
+    assert.is_nil(err)
+    assert.equal(".github/pr-groups.json", res.path)
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it("falls back to jsonc and prefers json", function()
+    local dir, run = create_repo()
+    write(dir, ".github/pr-groups.jsonc", { "// c", "{}" })
+    run("add", ".")
+    run("commit", "-m", "jsonc")
+    local err, res = await(git.get_review_config, "HEAD", dir)
+    assert.is_nil(err)
+    assert.equal(".github/pr-groups.jsonc", res.path)
+    assert.equal("// c\n{}\n", res.text)
+
+    write(dir, ".github/pr-groups.json", "{}")
+    run("add", ".")
+    run("commit", "-m", "json too")
+    err, res = await(git.get_review_config, "HEAD", dir)
+    assert.is_nil(err)
+    assert.equal(".github/pr-groups.json", res.path)
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it("reports other failures as errors", function()
+    local dir = create_repo()
+    local err, res = await(git.get_review_config, "no-such-rev", dir)
+    assert.is_not_nil(err)
+    assert.is_nil(res)
+    vim.fn.delete(dir, "rf")
+  end)
+end)
+
+describe("check_attr_generated", function()
+  it("marks generated files and honors -linguist-generated override", function()
+    local dir, run = create_repo()
+    write(dir, ".gitattributes", { "*.pb.go linguist-generated", "keep.pb.go -linguist-generated" })
+    write(dir, "a.pb.go", "x")
+    write(dir, "keep.pb.go", "x")
+    write(dir, "main.go", "x")
+    write(dir, "sub/b.pb.go", "x")
+    run("add", ".")
+    run("commit", "-m", "init")
+
+    local paths = { "a.pb.go", "keep.pb.go", "main.go", "sub/b.pb.go" }
+    for _, src in ipairs({ "HEAD", vim.NIL }) do
+      local err, gen = await(git.check_attr_generated, dir, paths, src ~= vim.NIL and src or nil)
+      assert.is_nil(err)
+      assert.same({ ["a.pb.go"] = true, ["sub/b.pb.go"] = true }, gen)
+    end
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it("empty paths returns empty set synchronously", function()
+    local called, gen = false, nil
+    git.check_attr_generated("/nonexistent", {}, "HEAD", function(err, res)
+      assert.is_nil(err)
+      gen, called = res, true
+    end)
+    assert.is_true(called)
+    assert.same({}, gen)
+  end)
+
+  it("handles paths with spaces", function()
+    local dir, run = create_repo()
+    write(dir, ".gitattributes", "*.gen linguist-generated=true")
+    write(dir, "my file.gen", "x")
+    run("add", ".")
+    run("commit", "-m", "init")
+    local err, gen = await(git.check_attr_generated, dir, { "my file.gen" }, "HEAD")
+    assert.is_nil(err)
+    assert.same({ ["my file.gen"] = true }, gen)
+    vim.fn.delete(dir, "rf")
+  end)
+end)
+
+describe("get_diff_blobs", function()
+  it("committed target", function()
+    local dir, run = create_repo()
+    write(dir, "a.txt", "a1")
+    write(dir, "gone.txt", "g")
+    run("add", ".")
+    run("commit", "-m", "base")
+    local base = head(run)
+    write(dir, "a.txt", "a2")
+    write(dir, "new.txt", "n")
+    run("rm", "-q", "gone.txt")
+    run("add", ".")
+    run("commit", "-m", "change")
+    local target = head(run)
+
+    local err, blobs = await(git.get_diff_blobs, dir, base, target)
+    assert.is_nil(err)
+    assert.same({
+      old = blob(run, base .. ":a.txt"),
+      new = blob(run, target .. ":a.txt"),
+    }, blobs["a.txt"])
+    assert.same({ old = git.ZERO_ID, new = blob(run, target .. ":new.txt") }, blobs["new.txt"])
+    assert.same({ old = blob(run, base .. ":gone.txt"), new = git.ZERO_ID }, blobs["gone.txt"])
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it("working tree target hashes edited and untracked files, deleted keeps zero id", function()
+    local dir, run = create_repo()
+    write(dir, "a.txt", "a1")
+    write(dir, "gone.txt", "g")
+    write(dir, "same.txt", "s")
+    run("add", ".")
+    run("commit", "-m", "base")
+    local base = head(run)
+    write(dir, "a.txt", "edited")
+    write(dir, "untracked.txt", "u")
+    vim.fn.delete(dir .. "/gone.txt")
+
+    for _, target in ipairs({ vim.NIL, "WORKING" }) do
+      local err, blobs = await(git.get_diff_blobs, dir, base, target ~= vim.NIL and target or nil)
+      assert.is_nil(err)
+      assert.equal(blob(run, base .. ":a.txt"), blobs["a.txt"].old)
+      assert.equal(vim.trim(run("hash-object", "a.txt")), blobs["a.txt"].new)
+      assert.same({ old = blob(run, base .. ":gone.txt"), new = git.ZERO_ID }, blobs["gone.txt"])
+      assert.same({ old = git.ZERO_ID, new = vim.trim(run("hash-object", "untracked.txt")) }, blobs["untracked.txt"])
+      assert.is_nil(blobs["same.txt"])
+    end
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it("keys renames by new path with old blob from old path", function()
+    local dir, run = create_repo()
+    write(dir, "old.txt", { "line1", "line2", "line3", "line4" })
+    run("add", ".")
+    run("commit", "-m", "base")
+    local base = head(run)
+    run("mv", "old.txt", "new.txt")
+    run("commit", "-m", "rename")
+    local target = head(run)
+
+    local err, blobs = await(git.get_diff_blobs, dir, base, target)
+    assert.is_nil(err)
+    assert.is_nil(blobs["old.txt"])
+    assert.same({ old = blob(run, base .. ":old.txt"), new = blob(run, target .. ":new.txt") }, blobs["new.txt"])
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it("handles paths with spaces", function()
+    local dir, run = create_repo()
+    write(dir, "x.txt", "x")
+    run("add", ".")
+    run("commit", "-m", "base")
+    local base = head(run)
+    write(dir, "my file.txt", "hello")
+    local err, blobs = await(git.get_diff_blobs, dir, base, nil)
+    assert.is_nil(err)
+    assert.equal(vim.trim(run("hash-object", "my file.txt")), blobs["my file.txt"].new)
+    vim.fn.delete(dir, "rf")
+  end)
+end)

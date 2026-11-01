@@ -127,6 +127,16 @@ https://github.com/user-attachments/assets/64c41f01-dffe-4318-bce4-16eec8de356e
         unstaged = true,
         conflicts = true,
       },
+      pr_review = {            -- Review groups for revision mode (see "PR Review Groups")
+        enabled = true,          -- Group files by .github/pr-groups.json (revision mode only)
+        groups = nil,            -- Lua table (same shape as pr-groups.json) overriding the repo config
+        auto_mark_viewed = true, -- Files in autoViewed / Generated groups start viewed
+        collapse_groups = false, -- true: every review group starts collapsed (auto-viewed groups always do)
+        skip_viewed = true,      -- ]f / [f skip viewed files
+        viewed_icon = "\u{f00c}", -- Marker for viewed files
+        regex_engine = "auto",   -- "auto" (node if found, else vim), "node", or "vim"
+        debug = false,           -- Log how review groups are loaded ([codediff:review] messages)
+      },
     },
 
     -- History panel configuration (for :CodeDiff history)
@@ -160,6 +170,7 @@ https://github.com/user-attachments/assets/64c41f01-dffe-4318-bce4-16eec8de356e
         show_help = "g?",   -- Show floating window with available keymaps
         align_move = "gm", -- Temporarily align moved code blocks across panes
         toggle_layout = "t", -- Toggle between side-by-side and inline layout
+        toggle_viewed = "<leader>v", -- Toggle Viewed for the current file (revision mode)
       },
       explorer = {
         select = "<CR>",    -- Open diff for selected file
@@ -171,6 +182,7 @@ https://github.com/user-attachments/assets/64c41f01-dffe-4318-bce4-16eec8de356e
         restore = "X",      -- Discard changes (restore file)
         toggle_changes = "gu",  -- Toggle Changes (unstaged) group visibility
         toggle_staged = "gs",   -- Toggle Staged Changes group visibility
+        toggle_viewed = "v",    -- Toggle Viewed on file / directory / group (revision mode)
         -- Fold keymaps (Vim-style)
         fold_open = "zo",           -- Open fold (expand current node)
         fold_open_recursive = "zO", -- Open fold recursively (expand all descendants)
@@ -330,6 +342,73 @@ Show only changes introduced since branching from a base branch—exactly like a
 ```
 
 This uses `git merge-base` semantics (equivalent to `git diff main...HEAD`), showing only the changes introduced on your branch, not changes that happened on the base branch since you branched.
+
+### PR Review Groups
+
+In revision mode (`:CodeDiff main`, `:CodeDiff main HEAD`, `:CodeDiff main...HEAD`) the explorer can group the changed files by rules your repository commits, so the code that matters comes first and lockfiles and generated code come last. Status mode and directory comparison keep their usual groups.
+
+Rules live in `.github/pr-groups.json` (or `.github/pr-groups.jsonc`), the same format used by the github-fast-pr browser extension:
+
+```json
+{
+  // Groups are shown in this order (highest viewPriority first)
+  "groups": [
+    { "name": "Backend", "paths": ["^server/", "\\.go$"] },
+    { "name": "Frontend", "paths": ["^web/"] },
+    { "name": "Tests", "paths": ["_test\\.go$", "\\.spec\\.ts$"], "matchPriority": 2 },
+    { "name": "Lockfiles", "paths": ["\\.(lock|sum)$", "package-lock\\.json$"], "autoViewed": true },
+  ],
+  "generated": { "viewPriority": -3 },
+  "ungrouped": { "viewPriority": 5 }
+}
+```
+
+- **Format**: a JSON object with `groups`, an array of `{ name, paths, autoViewed?, matchPriority?, viewPriority? }`, plus optional `generated: { matchPriority?, viewPriority? }` and `ungrouped: { viewPriority? }`. `//` and `/* */` comments and trailing commas are accepted. An invalid config (bad JSON, missing `name`/`paths`, bad pattern, wrong types) is ignored with one error message, and the review continues as if there were none.
+- **Patterns**: each entry of `paths` is a JavaScript regular expression matched unanchored and case-sensitively against the repo-relative path. With `node` on `$PATH` (`regex_engine = "auto"`, the default), patterns run as native JavaScript regexes, exactly as in the extension. Without node, a built-in translator to Vim regex is used, which supports: `^ $ .`, escapes like `\.`, `\d \w \s`, character classes, groups `( )` `(?:...)` `(?<name>...)`, lookahead `(?=...)` `(?!...)`, lookbehind `(?<=...)` `(?<!...)`, alternation `|`, and the quantifiers `* + ? {n,m}`. The translator rejects (making the config invalid) inline flags like `(?i)`, word boundaries `\b`, and backreferences.
+- **Assignment**: a file belongs to the matching group with the highest `matchPriority`; ties go to the earlier group. Default `matchPriority` is 1 for `autoViewed` groups and 0 otherwise. Files matching nothing are `Ungrouped`.
+- **Order**: groups sort by `viewPriority`, highest first, ties in config order. Defaults: 0 for groups, -1 for `Ungrouped`, -2 for `autoViewed` groups. Empty groups are hidden.
+- **Generated**: files marked `linguist-generated` in `.gitattributes` form an auto-viewed `Generated` group, with or without a config. Attributes are resolved by git (last matching line wins, `-linguist-generated` unsets), read from the base revision on git 2.40+ and from the working tree on older git.
+- **Config source**: the config is read from the base revision of the comparison, not from the reviewed branch. For `main...HEAD` that is the merge-base.
+- **Override**: set `explorer.pr_review.groups` in `setup()` to a Lua table with the same shape to use it for every repo instead of the repo file. The Generated group still applies.
+- **No rules**: with no valid config and no generated files you get the usual single `Changes` group.
+- **Options** (`explorer.pr_review`): `enabled` (set `false` to restore the plain `Changes` group), `groups`, `auto_mark_viewed`, `collapse_groups`, `skip_viewed`, `viewed_icon`, `debug` (logs each step of loading the groups as `[codediff:review]` messages: the base revision, every `git show <base>:<path>` attempt with git's error, the parse result and the groups built; check `:messages`). Auto-viewed groups start collapsed, and `collapse_groups = true` collapses all groups. Your own collapse state is kept across refreshes.
+
+```lua
+require("codediff").setup({
+  explorer = {
+    pr_review = {
+      groups = {
+        groups = {
+          { name = "Backend", paths = { "^server/" } },
+          { name = "Lockfiles", paths = { "\\.lock$" }, autoViewed = true },
+        },
+      },
+    },
+  },
+})
+```
+
+#### Viewed state
+
+In revision mode every changed file can be marked as viewed, which keeps track of what you have already reviewed (it also works on the single `Changes` group when no rules apply). Viewed files show a marker (`viewed_icon`) before the file icon and are dimmed (`CodeDiffExplorerViewed`). Group headers read `Backend  1/4  +70 -15`: the viewed count out of the total (dimmed, `CodeDiffExplorerGroupProgress`), and the summed `+ins -del` of the files still unviewed when `show_line_stats` is on. The plain group reads `Changes  1/5`.
+
+- **Explorer `v`** (`keymaps.explorer.toggle_viewed`): toggles the file, directory or group under the cursor. On a directory or group, if any file is unviewed they all become viewed, otherwise they all become unviewed.
+- **Diff panes `<leader>v`** (`keymaps.view.toggle_viewed`): toggles the file you are looking at.
+- **Navigation**: `]f` / `[f` skip viewed files (including files inside collapsed groups, which are expanded to show the target) while `skip_viewed` is true. When every file is viewed, `All files viewed` is shown and the current file stays open.
+- **Auto-viewed groups** (`autoViewed: true` and Generated) start viewed while `auto_mark_viewed` is true. Un-viewing such a file sticks for that file diff.
+- **Identity**: a file is viewed only while both sides of its diff are unchanged (it is keyed by path plus the old and new blob ids). A new commit that touches the file, or an edit to it when comparing against the working tree, makes it unviewed again; commits touching other files do not. State is shared by every review with the same file diff, whatever the revisions are called (`main...feature` and the two resolved SHAs).
+- **Storage**: one JSON file per repository under `stdpath("state")/codediff/viewed/` (named by a hash of the repo root), pruned after 90 days. If it cannot be read or written you get one warning and the review continues with in-memory state.
+- **Status and directory mode** have no viewed state; the keymaps do nothing there.
+- **Event**: toggling fires `User CodeDiffViewedChange` with `data = { tabpage, paths, viewed }` (`viewed` is the new boolean state of `paths`), so you can hook it up to anything:
+
+```lua
+vim.api.nvim_create_autocmd("User", {
+  pattern = "CodeDiffViewedChange",
+  callback = function(ev)
+    print(vim.inspect(ev.data.paths), ev.data.viewed)
+  end,
+})
+```
 
 ### Git Diff Mode
 

@@ -59,6 +59,7 @@ function M.setup_explorer(tabpage, session_config, original_win, modified_win)
     explorer_opts.dir1 = session_config.original_path
     explorer_opts.dir2 = session_config.modified_path
   end
+  explorer_opts.review_ctx = session_config.explorer_data.review_ctx
   if session_config.explorer_data.focus_file then
     explorer_opts.focus_file = session_config.explorer_data.focus_file
   end
@@ -176,6 +177,7 @@ function M.rebuild(tabpage)
       dir1 = panel.dir1,
       dir2 = panel.dir2,
       focus_file = preserved_file,
+      review_ctx = panel.review_ctx,
     }
     new_panel =
       explorer_module.create(panel.status_result, panel.git_root, tabpage, nil, panel.base_revision, panel.target_revision, opts)

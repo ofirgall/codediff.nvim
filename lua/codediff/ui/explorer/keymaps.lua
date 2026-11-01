@@ -159,6 +159,13 @@ function M.setup(explorer)
     end, vim.tbl_extend("force", map_options, { buffer = split.bufnr, desc = "Restore/discard changes" }))
   end
 
+  -- Toggle Viewed (revision mode review): file, directory or group under cursor
+  if explorer_keymaps.toggle_viewed then
+    vim.keymap.set("n", explorer_keymaps.toggle_viewed, function()
+      require("codediff.ui.explorer.viewed").toggle_node(explorer, tree:get_node())
+    end, vim.tbl_extend("force", map_options, { buffer = split.bufnr, desc = "Toggle viewed" }))
+  end
+
   -- Toggle Changes (unstaged) group visibility
   if explorer_keymaps.toggle_changes then
     vim.keymap.set("n", explorer_keymaps.toggle_changes, function()

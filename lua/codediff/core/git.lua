@@ -100,6 +100,7 @@ local function append_pathspecs(args, pathspecs)
 end
 
 -- Run a git command asynchronously
+-- opts: { cwd = string, stdin = string (optional data piped to git's stdin) }
 -- Uses vim.system if available (Neovim 0.10+), falls back to vim.loop.spawn
 local function run_git_async(args, opts, callback)
   opts = opts or {}
@@ -116,6 +117,7 @@ local function run_git_async(args, opts, callback)
     vim.system(vim.list_extend({ "git" }, args), {
       cwd = opts.cwd,
       text = true,
+      stdin = opts.stdin,
     }, function(result)
       if result.code == 0 then
         callback(nil, result.stdout or "")
@@ -137,12 +139,13 @@ local function run_git_async(args, opts, callback)
     local handle
     local stdout = vim.loop.new_pipe(false)
     local stderr = vim.loop.new_pipe(false)
+    local stdin = opts.stdin and vim.loop.new_pipe(false) or nil
 
     ---@diagnostic disable-next-line: missing-fields
     handle = vim.loop.spawn("git", {
       args = args,
       cwd = opts.cwd,
-      stdio = { nil, stdout, stderr },
+      stdio = { stdin, stdout, stderr },
     }, function(code)
       if stdout then
         stdout:close()
@@ -166,6 +169,12 @@ local function run_git_async(args, opts, callback)
     if not handle then
       callback("Failed to spawn git process", nil)
       return
+    end
+
+    if stdin then
+      stdin:write(opts.stdin, function()
+        stdin:close()
+      end)
     end
 
     if stdout then
@@ -599,6 +608,177 @@ function M.get_diff_revisions(rev1, rev2, git_root, callback, pathspecs)
     end
 
     callback(nil, result)
+  end)
+end
+
+-- REVIEW GROUPS SUPPORT (config / attributes / blob ids)
+
+local REVIEW_CONFIG_PATHS = { ".github/pr-groups.json", ".github/pr-groups.jsonc" }
+local ZERO_ID = string.rep("0", 40)
+M.ZERO_ID = ZERO_ID
+
+-- Read the review config at a revision (async).
+-- Tries .github/pr-groups.json then .github/pr-groups.jsonc via `git show`.
+-- callback: function(err, result)
+--   result = { path = ".github/pr-groups.json", text = "..." } or nil when no config exists
+function M.get_review_config(revision, git_root, callback)
+  -- attempts: { { path, err|nil } } for every path tried, in order (for debug logging)
+  local attempts = {}
+  local function try(i)
+    local path = REVIEW_CONFIG_PATHS[i]
+    if not path then
+      callback(nil, nil, attempts)
+      return
+    end
+    run_git_async({ "show", revision .. ":" .. path }, { cwd = git_root }, function(err, output)
+      attempts[#attempts + 1] = { path = path, err = err }
+      if err then
+        if err:match("does not exist") or err:match("exists on disk, but not in") then
+          try(i + 1)
+        else
+          callback(err, nil, attempts)
+        end
+        return
+      end
+      callback(nil, { path = path, text = output }, attempts)
+    end)
+  end
+  try(1)
+end
+
+-- `git check-attr --source` needs git >= 2.40. Detected once and cached.
+local supports_attr_source = nil
+local function git_supports_attr_source()
+  if supports_attr_source == nil then
+    supports_attr_source = false
+    local ok, res = pcall(function()
+      return vim.system({ "git", "--version" }, { text = true }):wait()
+    end)
+    if ok and res and res.code == 0 then
+      local major, minor = (res.stdout or ""):match("(%d+)%.(%d+)")
+      major, minor = tonumber(major), tonumber(minor)
+      if major and minor then
+        supports_attr_source = major > 2 or (major == 2 and minor >= 40)
+      end
+    end
+  end
+  return supports_attr_source
+end
+
+-- Find which paths are marked linguist-generated (async).
+-- source_rev: revision whose .gitattributes to read (git >= 2.40); nil, or older git, uses the working tree.
+-- callback: function(err, generated) where generated is a set { [path] = true }
+function M.check_attr_generated(git_root, paths, source_rev, callback)
+  if not paths or #paths == 0 then
+    callback(nil, {})
+    return
+  end
+  local args = { "check-attr", "--stdin", "-z" }
+  if source_rev and git_supports_attr_source() then
+    args[#args + 1] = "--source=" .. source_rev
+  end
+  args[#args + 1] = "linguist-generated"
+  local stdin = table.concat(paths, "\0") .. "\0"
+  run_git_async(args, { cwd = git_root, stdin = stdin }, function(err, output)
+    if err then
+      callback(err, nil)
+      return
+    end
+    -- Output: <path> NUL <attr> NUL <value> NUL
+    local fields = vim.split(output, "\0", { plain = true })
+    local generated = {}
+    for i = 1, #fields - 2, 3 do
+      local value = fields[i + 2]
+      if value == "set" or value == "true" then
+        generated[fields[i]] = true
+      end
+    end
+    callback(nil, generated)
+  end)
+end
+
+-- Get old/new blob ids for every file changed between base and target (async).
+-- target nil or "WORKING": base vs working tree (includes untracked files, like get_diff_revision).
+-- Renames are detected (-M, as in get_diff_revision(s)) and keyed by the NEW path;
+-- old is the blob id at the old path.
+-- callback: function(err, blobs) where blobs = { [path] = { old = sha40, new = sha40 } }
+-- Added files have old = ZERO_ID, deleted files have new = ZERO_ID, untracked files old = ZERO_ID.
+function M.get_diff_blobs(git_root, base, target, callback)
+  local working = target == nil or target == "WORKING"
+  local args = { "diff", "--raw", "-z", "--abbrev=40", "-M", base }
+  if not working then
+    args[#args + 1] = target
+  end
+  run_git_async(args, { cwd = git_root }, function(err, output)
+    if err then
+      callback(err, nil)
+      return
+    end
+
+    local blobs = {}
+    local to_hash = {}
+    -- Records: ":<mode> <mode> <old> <new> <status>" NUL path [NUL new_path for R/C] NUL
+    local fields = vim.split(output, "\0", { plain = true })
+    local i = 1
+    while i <= #fields do
+      local meta = fields[i]
+      if meta:sub(1, 1) ~= ":" then
+        i = i + 1
+      else
+        local old, new, status = meta:match("^:%d+ %d+ (%x+) (%x+) (%a)")
+        local path = fields[i + 1]
+        i = i + 2
+        if old and path then
+          if status == "R" or status == "C" then
+            path = fields[i]
+            i = i + 1
+          end
+          blobs[path] = { old = old, new = new }
+          if working and status ~= "D" and new == ZERO_ID then
+            to_hash[#to_hash + 1] = path
+          end
+        end
+      end
+    end
+
+    if not working then
+      callback(nil, blobs)
+      return
+    end
+
+    -- Untracked files are part of the working-tree file list; they are new vs base.
+    run_git_async({ "ls-files", "--others", "--exclude-standard", "-z" }, { cwd = git_root }, function(uerr, uout)
+      if not uerr then
+        for _, path in ipairs(vim.split(uout, "\0", { plain = true })) do
+          if path ~= "" and not blobs[path] then
+            blobs[path] = { old = ZERO_ID, new = ZERO_ID }
+            to_hash[#to_hash + 1] = path
+          end
+        end
+      end
+
+      if #to_hash == 0 then
+        callback(nil, blobs)
+        return
+      end
+
+      run_git_async({ "hash-object", "--stdin-paths" }, {
+        cwd = git_root,
+        stdin = table.concat(to_hash, "\n") .. "\n",
+      }, function(herr, hout)
+        if herr then
+          callback(herr, nil)
+          return
+        end
+        local ids = vim.split(vim.trim(hout), "\n", { plain = true })
+        for idx, path in ipairs(to_hash) do
+          if ids[idx] and #ids[idx] == 40 then
+            blobs[path].new = ids[idx]
+          end
+        end
+        callback(nil, blobs)
+      end)
+    end)
   end)
 end
 

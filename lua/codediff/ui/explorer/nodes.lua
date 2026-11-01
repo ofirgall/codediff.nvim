@@ -89,35 +89,40 @@ function M.get_folder_icon(is_open)
 end
 
 -- Create flat file nodes (list mode)
-function M.create_file_nodes(files, git_root, group)
+-- extra (optional): { file_data = fun(file) -> table merged into the file node data,
+--                     dir_data = fun(dir_path) -> table merged into directory node data (tree mode) }
+function M.create_file_nodes(files, git_root, group, extra)
   local nodes = {}
   for _, file in ipairs(files) do
     local icon, icon_color = M.get_file_icon(file.path)
     local status_info = STATUS_SYMBOLS[file.status] or { symbol = file.status, color = "Normal" }
 
-    nodes[#nodes + 1] = Tree.Node({
-      text = file.path,
-      data = {
-        path = file.path,
-        status = file.status,
-        old_path = file.old_path, -- For renames: original path before rename
-        icon = icon,
-        icon_color = icon_color,
-        status_symbol = status_info.symbol,
-        status_color = status_info.color,
-        git_root = git_root,
-        group = group,
-        insertions = file.insertions,
-        deletions = file.deletions,
-        binary = file.binary,
-      },
-    })
+    local data = {
+      path = file.path,
+      status = file.status,
+      old_path = file.old_path, -- For renames: original path before rename
+      icon = icon,
+      icon_color = icon_color,
+      status_symbol = status_info.symbol,
+      status_color = status_info.color,
+      git_root = git_root,
+      group = group,
+      insertions = file.insertions,
+      deletions = file.deletions,
+      binary = file.binary,
+    }
+    if extra and extra.file_data then
+      for k, v in pairs(extra.file_data(file)) do
+        data[k] = v
+      end
+    end
+    nodes[#nodes + 1] = Tree.Node({ text = file.path, data = data })
   end
   return nodes
 end
 
 -- Create tree nodes with directory hierarchy (tree mode)
-function M.create_tree_file_nodes(files, git_root, group)
+function M.create_tree_file_nodes(files, git_root, group, extra)
   -- Build directory structure
   local dir_tree = {}
 
@@ -205,15 +210,21 @@ function M.create_tree_file_nodes(files, git_root, group)
       if item._is_dir then
         -- Directory node - children need to know this dir's is_last status
         local children = build_nodes(item._children, full_path, node_indent_state)
+        local dir_data = {
+          type = "directory",
+          name = key,
+          dir_path = full_path,
+          group = group,
+          indent_state = node_indent_state,
+        }
+        if extra and extra.dir_data then
+          for k, v in pairs(extra.dir_data(full_path)) do
+            dir_data[k] = v
+          end
+        end
         nodes[#nodes + 1] = Tree.Node({
           text = key,
-          data = {
-            type = "directory",
-            name = key,
-            dir_path = full_path,
-            group = group,
-            indent_state = node_indent_state,
-          },
+          data = dir_data,
         }, children)
       else
         -- File node
@@ -221,23 +232,29 @@ function M.create_tree_file_nodes(files, git_root, group)
         local icon, icon_color = M.get_file_icon(file.path)
         local status_info = STATUS_SYMBOLS[file.status] or { symbol = file.status, color = "Normal" }
 
+        local file_data = {
+          path = file.path,
+          status = file.status,
+          old_path = file.old_path,
+          icon = icon,
+          icon_color = icon_color,
+          status_symbol = status_info.symbol,
+          status_color = status_info.color,
+          git_root = git_root,
+          group = group,
+          indent_state = node_indent_state,
+          insertions = file.insertions,
+          deletions = file.deletions,
+          binary = file.binary,
+        }
+        if extra and extra.file_data then
+          for k, v in pairs(extra.file_data(file)) do
+            file_data[k] = v
+          end
+        end
         nodes[#nodes + 1] = Tree.Node({
           text = key,
-          data = {
-            path = file.path,
-            status = file.status,
-            old_path = file.old_path,
-            icon = icon,
-            icon_color = icon_color,
-            status_symbol = status_info.symbol,
-            status_color = status_info.color,
-            git_root = git_root,
-            group = group,
-            indent_state = node_indent_state,
-            insertions = file.insertions,
-            deletions = file.deletions,
-            binary = file.binary,
-          },
+          data = file_data,
         })
       end
     end
@@ -246,6 +263,13 @@ function M.create_tree_file_nodes(files, git_root, group)
   end
 
   return build_nodes(dir_tree, "", {})
+end
+
+-- Viewed marker text (icon plus one trailing space), from explorer.pr_review.viewed_icon
+function M.viewed_marker()
+  local pr = (config.options.explorer or {}).pr_review or {}
+  local icon = pr.viewed_icon or config.defaults.explorer.pr_review.viewed_icon
+  return icon .. " "
 end
 
 -- Truncate str to fit within max_width display cells, ending with "..." when there is room for it
@@ -310,7 +334,35 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
     return table.concat(indent_parts)
   end
 
-  if data.type == "group" then
+  if data.type == "group" and data.review then
+    -- Review group header: name, viewed/total (dimmed), remaining +ins -del of unviewed files (right-aligned)
+    local review = data.review
+    local progress = string.format("%d/%d", review.viewed or 0, review.total or 0)
+    local left_width = 1 + vim.fn.strdisplaywidth(review.name) + 2 + #progress
+    line:append(" ", "CodeDiffExplorerTreeGroup")
+    line:append(review.name, "CodeDiffExplorerTreeGroup")
+    line:append("  ", "CodeDiffExplorerTreeGroup")
+    line:append(progress, "CodeDiffExplorerGroupProgress")
+
+    local ins, del = review.ins or 0, review.del or 0
+    if explorer_config.show_line_stats and (ins > 0 or del > 0) then
+      local parts = {}
+      if ins > 0 then parts[#parts + 1] = "+" .. tostring(ins) end
+      if del > 0 then parts[#parts + 1] = "-" .. tostring(del) end
+      local right_width = #table.concat(parts, " ")
+      local status_margin = explorer_config.status_right_margin or 1
+      line:append(string.rep(" ", math.max(2, max_width - left_width - right_width - status_margin)), "Normal")
+      if ins > 0 then
+        line:append("+" .. tostring(ins), "DiagnosticOk")
+        if del > 0 then
+          line:append(" ", "Normal")
+        end
+      end
+      if del > 0 then
+        line:append("-" .. tostring(del), "DiagnosticError")
+      end
+    end
+  elseif data.type == "group" then
     -- Group header
     line:append(" ", "CodeDiffExplorerTreeGroup")
     line:append(node.text, "CodeDiffExplorerTreeGroup")
@@ -367,10 +419,22 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
       line:append(indent, get_hl("Normal"))
     end
 
+    -- Review mode: viewed marker before the icon (blank placeholder keeps columns aligned)
+    local viewed = data.viewed == true
     local icon_part = ""
+    if data.viewed ~= nil then
+      local marker = M.viewed_marker()
+      if viewed then
+        line:append(marker, get_hl("CodeDiffExplorerViewed"))
+      else
+        line:append(string.rep(" ", vim.fn.strdisplaywidth(marker)), get_hl("Normal"))
+      end
+      icon_part = marker
+    end
+    local name_hl = viewed and "CodeDiffExplorerViewed" or "Normal"
     if data.icon then
-      icon_part = data.icon .. " "
-      line:append(icon_part, get_hl(data.icon_color))
+      line:append(data.icon .. " ", get_hl(viewed and "CodeDiffExplorerViewed" or data.icon_color))
+      icon_part = icon_part .. data.icon .. " "
     end
 
     -- Determine right-side indicator: line stats or status symbol
@@ -434,10 +498,10 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
     end
 
     -- Append filename (normal weight) and directory (dimmed)
-    line:append(filename, get_hl("Normal"))
+    line:append(filename, get_hl(name_hl))
     if #directory > 0 then
       line:append(" ", get_hl("Normal"))
-      line:append(directory, get_hl("ExplorerDirectorySmall"))
+      line:append(directory, get_hl(viewed and "CodeDiffExplorerViewed" or "ExplorerDirectorySmall"))
     end
 
     -- Right-align indicator; trailing `status_margin` cells keep it visible against the window edge
@@ -496,6 +560,9 @@ function M.compute_natural_width(node)
   end
 
   local icon_width = data.icon and (vim.fn.strdisplaywidth(data.icon) + 1) or 0
+  if data.viewed ~= nil then
+    icon_width = icon_width + vim.fn.strdisplaywidth(M.viewed_marker())
+  end
 
   local has_stats = data.binary or (data.insertions and data.insertions > 0) or (data.deletions and data.deletions > 0)
   local show_line_stats = explorer_config.show_line_stats and has_stats

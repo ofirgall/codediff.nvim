@@ -641,6 +641,16 @@ function M.setup_all_keymaps(tabpage, original_bufnr, modified_bufnr, is_explore
     end
   end
 
+  -- Toggle viewed for the current file (revision mode review only; no-op elsewhere)
+  if is_explorer_mode and keymaps.toggle_viewed then
+    lifecycle.set_tab_keymap(tabpage, "n", keymaps.toggle_viewed, function()
+      local explorer = lifecycle.get_explorer(tabpage)
+      if explorer and explorer.review_ctx then
+        require("codediff.ui.explorer").toggle_viewed(explorer)
+      end
+    end, { desc = "Toggle viewed" })
+  end
+
   -- Hunk-level staging (S, U, D) - stage/unstage/discard individual hunks via git apply
   -- Only set on diff buffers, not explorer (S/U conflict with stage_all/unstage_all)
   local hunk_opts = { noremap = true, silent = true, nowait = true }

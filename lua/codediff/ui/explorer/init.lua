@@ -26,5 +26,6 @@ M.toggle_stage_file = actions.toggle_stage_file
 M.stage_all = actions.stage_all
 M.unstage_all = actions.unstage_all
 M.restore_entry = actions.restore_entry
+M.toggle_viewed = require("codediff.ui.explorer.viewed").toggle_current
 
 return M

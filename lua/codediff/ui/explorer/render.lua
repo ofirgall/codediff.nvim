@@ -192,7 +192,7 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
   local selected_group = nil
 
   -- Create tree with buffer number
-  local tree_data = tree_module.create_tree_data(status_result, git_root, base_revision, is_dir_mode, explorer_config.visible_groups)
+  local tree_data = tree_module.create_tree_data(status_result, git_root, base_revision, is_dir_mode, explorer_config.visible_groups, opts.review_ctx)
   local tree = Tree({
     bufnr = split.bufnr,
     nodes = tree_data,
@@ -247,6 +247,13 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
     end
   end
 
+  -- Review groups: auto-viewed groups (or all, with collapse_groups) start collapsed
+  for _, node in ipairs(tree_data) do
+    if node.data and node.data.review and node.data.review.default_collapsed then
+      node:collapse()
+    end
+  end
+
   -- Render tree
   tree:render()
 
@@ -263,6 +270,7 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
     base_revision = base_revision,
     target_revision = target_revision,
     status_result = status_result, -- Store initial status result
+    review_ctx = opts.review_ctx, -- Review groups context (revision mode), see review/context.lua
     on_file_select = nil, -- Will be set below
     current_file_path = nil, -- Track currently selected file
     current_file_group = nil, -- Track currently selected file's group (staged/unstaged)
@@ -727,7 +735,11 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
           for _, root_node in ipairs(explorer.tree:get_nodes()) do
             patch_nodes(root_node)
           end
-          explorer.tree:render()
+          if explorer.review_ctx then
+            require("codediff.ui.explorer.viewed").refresh_view(explorer)
+          else
+            explorer.tree:render()
+          end
           maybe_grow_panel(explorer)
         end)
       end)

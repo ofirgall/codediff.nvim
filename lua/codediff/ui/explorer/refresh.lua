@@ -4,6 +4,7 @@ local M = {}
 local config = require("codediff.config")
 local tree_module = require("codediff.ui.explorer.tree")
 local welcome = require("codediff.ui.welcome")
+local review_context = require("codediff.review.context")
 -- Setup auto-refresh triggers for explorer
 -- Returns a cleanup function that should be called when the explorer is destroyed
 function M.setup_auto_refresh(explorer, tabpage)
@@ -155,7 +156,7 @@ local function collect_collapsed_state(tree)
     local node_type = node.data.type
     if node_type == "group" or node_type == "directory" then
       -- Use path for directories, name for groups as unique key
-      local key = node.data.path or node.data.name
+      local key = node.data.collapse_key or node.data.path or node.data.name
       if key and not node:is_expanded() then
         collapsed[key] = true
       end
@@ -187,7 +188,7 @@ local function restore_collapsed_state(tree, collapsed, root_nodes)
     end
     local node_type = node.data.type
     if node_type == "group" or node_type == "directory" then
-      local key = node.data.path or node.data.name
+      local key = node.data.collapse_key or node.data.path or node.data.name
       if key and collapsed[key] then
         node:collapse()
       end
@@ -229,7 +230,26 @@ function M.refresh(explorer)
   -- Collect collapsed state before async operation
   local collapsed_state = collect_collapsed_state(explorer.tree)
 
-  local function process_result(err, status_result)
+  -- Review groups: config/blobs/store load alongside the status fetch; attrs once files are known
+  local pending_review = review_context.start({
+    git_root = explorer.git_root,
+    base_revision = explorer.base_revision,
+    target_revision = explorer.target_revision,
+    prev_ctx = explorer.review_ctx,
+  })
+  local review_ctx = nil
+  local review_done = pending_review == nil
+  local review_waiter = nil
+
+  -- Groups present before the refresh (a group that is new gets its default collapse state)
+  local previous_groups = {}
+  for _, node in ipairs(explorer.tree:get_nodes()) do
+    if node.data and node.data.name then
+      previous_groups[node.data.name] = true
+    end
+  end
+
+  local function process_result_inner(err, status_result)
     vim.schedule(function()
       if err then
         vim.notify("Failed to refresh: " .. err, vim.log.levels.ERROR)
@@ -237,7 +257,8 @@ function M.refresh(explorer)
       end
 
       -- Rebuild tree nodes using same structure as create_tree_data
-      local root_nodes = tree_module.create_tree_data(status_result, explorer.git_root, explorer.base_revision, not explorer.git_root, explorer.visible_groups)
+      explorer.review_ctx = review_ctx
+      local root_nodes = tree_module.create_tree_data(status_result, explorer.git_root, explorer.base_revision, not explorer.git_root, explorer.visible_groups, review_ctx)
 
       -- Expand all groups
       for _, node in ipairs(root_nodes) do
@@ -269,6 +290,14 @@ function M.refresh(explorer)
 
       -- Restore user's collapsed state (must be after expand_all_dirs)
       restore_collapsed_state(explorer.tree, collapsed_state, root_nodes)
+
+      -- Review groups that appeared with this refresh start in their default state
+      for _, node in ipairs(root_nodes) do
+        local review = node.data and node.data.review
+        if review and review.default_collapsed and not previous_groups[node.data.name] then
+          node:collapse()
+        end
+      end
 
       explorer.tree:render()
 
@@ -362,6 +391,31 @@ function M.refresh(explorer)
   -- Optionally enrich status_result with per-file line stats before processing
   local explorer_config = config.options.explorer or {}
   local function process_with_stats(err, status_result)
+    -- Hand the changed files to the review loader now so it overlaps with the numstat fetch
+    if pending_review and not err then
+      pending_review:finish(status_result.unstaged, function(_, ctx)
+        review_ctx = ctx
+        review_done = true
+        if review_waiter then
+          local waiter = review_waiter
+          review_waiter = nil
+          waiter()
+        end
+      end)
+    else
+      review_done = true
+    end
+
+    local process_result = function(e, sr)
+      if review_done then
+        process_result_inner(e, sr)
+      else
+        review_waiter = function()
+          process_result_inner(e, sr)
+        end
+      end
+    end
+
     if err or not explorer_config.show_line_stats or not explorer.git_root then
       process_result(err, status_result)
       return
@@ -462,15 +516,17 @@ end
 
 -- Get flat list of all files from tree (unstaged + staged)
 -- Handles both list mode (flat) and tree mode (nested directories)
-function M.get_all_files(tree)
+-- opts.include_collapsed: also walk collapsed groups/directories (used by review navigation)
+function M.get_all_files(tree, opts)
   local files = {}
+  local include_collapsed = opts and opts.include_collapsed
 
   -- Recursively collect files from a node and its children
   local function collect_files(parent_node)
     if not parent_node:has_children() then
       return
     end
-    if not parent_node:is_expanded() then
+    if not include_collapsed and not parent_node:is_expanded() then
       return
     end
 

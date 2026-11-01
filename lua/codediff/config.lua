@@ -73,6 +73,16 @@ M.defaults = {
     file_filter = {
       ignore = { ".git/**", ".jj/**" }, -- Glob patterns to hide (e.g., {"*.lock", "dist/*"})
     },
+    pr_review = { -- Review groups and Viewed state (revision mode only)
+      enabled = true, -- Group files by .github/pr-groups.json and track Viewed state
+      groups = nil, -- Table (same shape as pr-groups.json) overriding the repo config
+      auto_mark_viewed = true, -- Files in autoViewed/Generated groups start viewed
+      collapse_groups = false, -- true: every review group starts collapsed (auto-viewed groups always do)
+      skip_viewed = true, -- ]f/[f skip viewed files
+      viewed_icon = "\u{f00c}", -- Marker shown before viewed files
+      regex_engine = "auto", -- "auto": node (native JS regex) if on PATH, else vim translator; "node"; "vim"
+      debug = false, -- Log how review groups are loaded (config lookup, groups, generated files) to :messages
+    },
     show_line_stats = true, -- Show +insertions -deletions per file (replaces status symbol)
     focus_on_select = false, -- Jump to modified pane after selecting a file (default: stay in explorer)
     flatten_dirs = true, -- Flatten single-child directory chains in tree view (e.g., src/components/ui/)
@@ -113,6 +123,7 @@ M.defaults = {
       discard_hunk = "<leader>hr", -- Discard the hunk under cursor (working tree only)
       hunk_textobject = "ih", -- Textobject for hunk (vih to select, yih to yank, etc.)
       align_move = "gm", -- Temporarily align other pane to show paired moved code
+      toggle_viewed = "<leader>v", -- Toggle Viewed for the current file (revision mode)
       toggle_layout = "t", -- Toggle diff layout for the current codediff session
       show_help = "g?", -- Show floating window with available keymaps
     },
@@ -126,6 +137,7 @@ M.defaults = {
       restore = "X", -- Discard changes to file (restore to index/HEAD)
       toggle_changes = "gu", -- Toggle Changes (unstaged) group visibility
       toggle_staged = "gs", -- Toggle Staged Changes group visibility
+      toggle_viewed = "v", -- Toggle Viewed on file/directory/group (revision mode)
       -- Fold keymaps (Vim-style)
       fold_open = "zo", -- Open fold (expand current node)
       fold_open_recursive = "zO", -- Open fold recursively (expand current node and all descendants)

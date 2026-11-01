@@ -57,6 +57,7 @@ local function build_sections(keymaps, is_explorer, is_history, is_conflict)
     table.insert(view_items, { km.toggle_explorer, "Toggle explorer" })
     table.insert(view_items, { km.focus_explorer, "Focus explorer" })
     table.insert(view_items, { km.toggle_stage, "Stage/unstage current file" })
+    table.insert(view_items, { km.toggle_viewed, "Toggle viewed (revision review)" })
     table.insert(view_items, { km.stage_hunk, "Stage hunk under cursor" })
     table.insert(view_items, { km.unstage_hunk, "Unstage hunk under cursor" })
     table.insert(view_items, { km.discard_hunk, "Discard hunk under cursor" })
@@ -84,6 +85,7 @@ local function build_sections(keymaps, is_explorer, is_history, is_conflict)
         { ekm.restore, "Discard changes to file" },
         { ekm.toggle_changes, "Toggle Changes visibility" },
         { ekm.toggle_staged, "Toggle Staged visibility" },
+        { ekm.toggle_viewed, "Toggle viewed (file/dir/group)" },
         { ekm.fold_open, "Open fold" },
         { ekm.fold_open_recursive, "Open fold recursively" },
         { ekm.fold_close, "Close fold" },

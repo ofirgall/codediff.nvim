@@ -19,8 +19,115 @@ local function find_node_line(explorer, path, group)
   return nil
 end
 
+-- Review-mode navigation (explorer.review_ctx): walks files in collapsed groups too, skips viewed
+-- files when pr_review.skip_viewed, and expands the target's ancestors before moving the cursor.
+-- dir: 1 = next, -1 = previous
+local function navigate_review(explorer, dir)
+  local tree = explorer.tree
+  local all_files = refresh_module.get_all_files(tree, { include_collapsed = true })
+  local n = #all_files
+  if n == 0 then
+    vim.notify("No files in explorer", vim.log.levels.WARN)
+    return
+  end
+  local pr = (config.options.explorer or {}).pr_review or {}
+  local skip_viewed = pr.skip_viewed ~= false
+
+  local current_index = 0
+  if explorer.current_file_path then
+    for i, file in ipairs(all_files) do
+      if file.data.path == explorer.current_file_path and file.data.group == explorer.current_file_group then
+        current_index = i
+        break
+      end
+    end
+  end
+
+  local function acceptable(file)
+    return not (skip_viewed and file.data.viewed)
+  end
+
+  local target
+  if current_index == 0 then
+    -- Nothing selected yet: first (or last) acceptable file
+    local first, last, step = 1, n, 1
+    if dir < 0 then
+      first, last, step = n, 1, -1
+    end
+    for i = first, last, step do
+      if acceptable(all_files[i]) then
+        target = all_files[i]
+        break
+      end
+    end
+  else
+    local cycle = config.options.diff.cycle_next_file
+    for step = 1, n - 1 do
+      local idx = current_index + dir * step
+      if idx > n or idx < 1 then
+        if not cycle then
+          local msg = dir > 0 and string.format("Last file (%d of %d)", current_index, n) or string.format("First file (%d of %d)", current_index, n)
+          vim.api.nvim_echo({ { msg, "WarningMsg" } }, false, {})
+          return
+        end
+        idx = (idx - 1) % n + 1
+      end
+      if acceptable(all_files[idx]) then
+        target = all_files[idx]
+        break
+      end
+    end
+  end
+
+  if not target then
+    local all_viewed = true
+    for _, file in ipairs(all_files) do
+      if not file.data.viewed then
+        all_viewed = false
+        break
+      end
+    end
+    local msg = all_viewed and "All files viewed" or "No other unviewed files"
+    vim.api.nvim_echo({ { msg, "WarningMsg" } }, false, {})
+    return
+  end
+  vim.api.nvim_echo({}, false, {})
+
+  -- Expand collapsed ancestors so the target is visible
+  local expanded_any = false
+  local parent_id = target.node._parent_id
+  while parent_id do
+    local parent = tree:get_node(parent_id)
+    if not parent then
+      break
+    end
+    if not parent:is_expanded() then
+      parent:expand()
+      expanded_any = true
+    end
+    parent_id = parent._parent_id
+  end
+  if expanded_any then
+    tree:render()
+  end
+
+  local current_win = vim.api.nvim_get_current_win()
+  if vim.api.nvim_win_is_valid(explorer.winid) then
+    local line = find_node_line(explorer, target.data.path, target.data.group)
+    if line then
+      vim.api.nvim_set_current_win(explorer.winid)
+      vim.api.nvim_win_set_cursor(explorer.winid, { line, 0 })
+      vim.api.nvim_set_current_win(current_win)
+    end
+  end
+  explorer.on_file_select(target.data)
+end
+
 -- Navigate to next file in explorer
 function M.navigate_next(explorer)
+  if explorer.review_ctx then
+    return navigate_review(explorer, 1)
+  end
   local all_files = refresh_module.get_all_files(explorer.tree)
   if #all_files == 0 then
     vim.notify("No files in explorer", vim.log.levels.WARN)
@@ -74,6 +181,9 @@ end
 
 -- Navigate to previous file in explorer
 function M.navigate_prev(explorer)
+  if explorer.review_ctx then
+    return navigate_review(explorer, -1)
+  end
   local all_files = refresh_module.get_all_files(explorer.tree)
   if #all_files == 0 then
     vim.notify("No files in explorer", vim.log.levels.WARN)
@@ -177,6 +287,10 @@ end
 -- Toggle visibility of a group (staged/unstaged/conflicts)
 function M.toggle_group(explorer, group_name)
   if not explorer or not explorer.visible_groups then
+    return
+  end
+  -- Review groups ("review:<name>") are always shown; only the status groups can be toggled
+  if type(group_name) == "string" and group_name:sub(1, 7) == "review:" then
     return
   end
 
