@@ -273,6 +273,84 @@ describe("explorer viewed state", function()
     assert.is_false(file_node(explorer, "server/a.go").data.viewed)
   end)
 
+  -- Highlight groups covering the first occurrence of `text` on line `l`
+  local function hls_at(explorer, l, text)
+    local col = buf_line(explorer, l):find(text, 1, true) - 1
+    local out = {}
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(explorer.bufnr, explorer.tree._ns_id, { l - 1, 0 }, { l - 1, -1 }, { details = true })) do
+      if m[3] <= col and col < m[4].end_col then
+        out[#out + 1] = m[4].hl_group
+      end
+    end
+    return out
+  end
+
+  it("shows directory line stats, fades and collapses directories and groups once fully viewed", function()
+    config.options.explorer.view_mode = "tree"
+    config.options.explorer.show_line_stats = true
+    grouped_repo()
+    local explorer = open_grouped()
+    local backend = root(explorer, "review:Backend")
+    local dir = explorer.tree:get_node(backend:get_child_ids()[1])
+    assert.equals("server", dir.data.name)
+    assert.is_true(vim.wait(10000, function()
+      return backend.data.review.ins == 100
+    end, 50))
+
+    -- directory sums its files' lines
+    assert.truthy(buf_line(explorer, line_of(explorer, dir)):match("server%s+%+100 %-6%s*$"), buf_line(explorer, line_of(explorer, dir)))
+
+    -- one file viewed: the directory shows what is left
+    press_on(explorer, file_node(explorer, "server/a.go"), "v")
+    assert.truthy(buf_line(explorer, line_of(explorer, dir)):match("server%s+%+70 %-1%s*$"))
+    assert.is_true(dir:is_expanded())
+    assert.same({ "Directory" }, hls_at(explorer, line_of(explorer, dir), "server"))
+
+    -- last file viewed: directory and group collapse, cursor lands on the group header
+    press_on(explorer, file_node(explorer, "server/c.go"), "v")
+    assert.is_false(backend:is_expanded())
+    assert.is_false(dir:is_expanded())
+    local l = line_of(explorer, backend)
+    assert.equals(l, vim.api.nvim_win_get_cursor(explorer.winid)[1])
+    assert.truthy(buf_line(explorer, l):match("^ Backend  V 2/2%s+%+100 %-6%s*$"), buf_line(explorer, l))
+    assert.same({ "CodeDiffExplorerViewed" }, hls_at(explorer, l, "Backend"))
+    assert.same({ "CodeDiffExplorerViewed" }, hls_at(explorer, l, "+100"))
+
+    -- reopened by hand: stays open and the directory row is faded
+    backend:expand()
+    explorer.tree:render()
+    assert.same({ "CodeDiffExplorerViewed" }, hls_at(explorer, line_of(explorer, dir), "server"))
+    assert.truthy(buf_line(explorer, line_of(explorer, dir)):match("V .*server%s+%+100 %-6%s*$"))
+
+    -- un-viewing does not collapse anything
+    dir:expand()
+    explorer.tree:render()
+    press_on(explorer, file_node(explorer, "server/a.go"), "v")
+    assert.is_true(backend:is_expanded() and dir:is_expanded())
+  end)
+
+  it("draws auto-viewed group names with CodeDiffExplorerGroupAutoViewed", function()
+    grouped_repo()
+    local explorer = open_grouped()
+    local lock = root(explorer, "review:Lockfiles")
+    assert.is_false(lock:is_expanded())
+    assert.same({ "CodeDiffExplorerGroupAutoViewed" }, hls_at(explorer, line_of(explorer, lock), "Lockfiles"))
+    assert.same({ "CodeDiffExplorerTreeGroup" }, hls_at(explorer, line_of(explorer, root(explorer, "review:Backend")), "Backend"))
+  end)
+
+  it("starts fully viewed directories collapsed", function()
+    config.options.explorer.view_mode = "tree"
+    grouped_repo()
+    local explorer = open_grouped()
+    press_on(explorer, root(explorer, "review:Backend"), "v")
+    explorer.review_ctx.store:flush()
+    reset_sessions()
+    explorer = open_grouped()
+    local backend = root(explorer, "review:Backend")
+    assert.is_false(backend:is_expanded())
+    assert.is_false(explorer.tree:get_node(backend:get_child_ids()[1]):is_expanded())
+  end)
+
   it("does nothing in status mode", function()
     repo.write_file("a.txt", { "a" })
     commit_all("base")
@@ -334,6 +412,39 @@ describe("explorer viewed state", function()
       local lock2 = file_node(explorer, "yarn.lock")
       assert.is_false(lock2.data.viewed)
       assert.equals("Lockfiles", lock2.data.review_group)
+      -- nothing viewed in it, so it starts open
+      assert.is_true(root(explorer, "review:Lockfiles"):is_expanded())
+    end)
+
+    it("opens a collapsed viewed group when one of its files is unviewed", function()
+      grouped_repo()
+      local explorer = open_grouped()
+      local group = root(explorer, "review:Lockfiles")
+      assert.is_false(group:is_expanded())
+      viewed_ui.set_viewed(explorer, { file_node(explorer, "yarn.lock") }, false)
+      assert.is_true(group:is_expanded())
+      assert.truthy(line_of(explorer, file_node(explorer, "yarn.lock")))
+    end)
+
+    it("opens a viewed group and directory when a file's diff changes on refresh", function()
+      config.options.explorer.view_mode = "tree"
+      grouped_repo()
+      local explorer = open(string.format("CodeDiff %s", base)) -- target: working tree
+      local backend = root(explorer, "review:Backend")
+      viewed_ui.toggle_node(explorer, backend)
+      local dir = explorer.tree:get_node(backend:get_child_ids()[1])
+      assert.is_false(backend:is_expanded())
+      assert.is_false(dir:is_expanded())
+
+      repo.write_file("server/c.go", { "changed again" })
+      require("codediff.ui.explorer.refresh").refresh(explorer)
+      assert.is_true(vim.wait(10000, function()
+        local b = root(explorer, "review:Backend")
+        return b and b.data.review.viewed == 1 and b:is_expanded()
+      end, 50))
+      backend = root(explorer, "review:Backend")
+      assert.is_true(explorer.tree:get_node(backend:get_child_ids()[1]):is_expanded())
+      assert.is_false(file_node(explorer, "server/c.go").data.viewed)
     end)
   end)
 

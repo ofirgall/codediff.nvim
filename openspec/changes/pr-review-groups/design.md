@@ -102,7 +102,7 @@ handle_explorer / refresh
           |  viewed store (cached per git_root for the session)
 ```
 
-The loads run in parallel with the existing status fetch, so they add no extra round trip on the critical path. On refresh, the config result is cached per base revision, and attrs and blob ids are re-fetched because files and working-tree content change. Initial collapse: review groups with `auto_viewed`, or all of them when `collapse_groups = true`, start collapsed. `refresh.lua` already restores user collapse state by key after re-expanding.
+The loads run in parallel with the existing status fetch, so they add no extra round trip on the critical path. On refresh, the config result is cached per base revision, and attrs and blob ids are re-fetched because files and working-tree content change. Initial collapse: fully viewed groups and directories (so auto-viewed groups by default), or all groups when `collapse_groups = true`, start collapsed. Afterwards a group or directory collapses when it becomes fully viewed and expands (with its ancestors) when it stops being fully viewed; anything else keeps the user's state. `refresh.lua` already restores user collapse state by key after re-expanding.
 
 ### 10. Navigation over collapsed groups
 

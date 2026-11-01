@@ -247,11 +247,15 @@ function M.create(status_result, git_root, tabpage, width, base_revision, target
     end
   end
 
-  -- Review groups: auto-viewed groups (or all, with collapse_groups) start collapsed
+  -- Review groups: with collapse_groups every group starts collapsed (fully viewed ones always do, below)
   for _, node in ipairs(tree_data) do
     if node.data and node.data.review and node.data.review.default_collapsed then
       node:collapse()
     end
+  end
+  -- Fully viewed groups/directories start collapsed (nothing left to review in them)
+  if opts.review_ctx then
+    require("codediff.ui.explorer.viewed").sync_collapsed(tree, {})
   end
 
   -- Render tree

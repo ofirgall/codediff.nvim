@@ -131,7 +131,7 @@ https://github.com/user-attachments/assets/64c41f01-dffe-4318-bce4-16eec8de356e
         enabled = true,          -- Group files by .github/pr-groups.json (revision mode only)
         groups = nil,            -- Lua table (same shape as pr-groups.json) overriding the repo config
         auto_mark_viewed = true, -- Files in autoViewed / Generated groups start viewed
-        collapse_groups = false, -- true: every review group starts collapsed (auto-viewed groups always do)
+        collapse_groups = false, -- true: every review group starts collapsed (fully viewed groups always do)
         skip_viewed = true,      -- ]f / [f skip viewed files
         viewed_icon = "\u{f00c}", -- Marker for viewed files
         regex_engine = "auto",   -- "auto" (node if found, else vim), "node", or "vim"
@@ -371,7 +371,7 @@ Rules live in `.github/pr-groups.json` (or `.github/pr-groups.jsonc`), the same 
 - **Config source**: the config is read from the base revision of the comparison, not from the reviewed branch. For `main...HEAD` that is the merge-base.
 - **Override**: set `explorer.pr_review.groups` in `setup()` to a Lua table with the same shape to use it for every repo instead of the repo file. The Generated group still applies.
 - **No rules**: with no valid config and no generated files you get the usual single `Changes` group.
-- **Options** (`explorer.pr_review`): `enabled` (set `false` to restore the plain `Changes` group), `groups`, `auto_mark_viewed`, `collapse_groups`, `skip_viewed`, `viewed_icon`, `debug` (logs each step of loading the groups as `[codediff:review]` messages: the base revision, every `git show <base>:<path>` attempt with git's error, the parse result and the groups built; check `:messages`). Auto-viewed groups start collapsed, and `collapse_groups = true` collapses all groups. Your own collapse state is kept across refreshes.
+- **Options** (`explorer.pr_review`): `enabled` (set `false` to restore the plain `Changes` group), `groups`, `auto_mark_viewed`, `collapse_groups`, `skip_viewed`, `viewed_icon`, `debug` (logs each step of loading the groups as `[codediff:review]` messages: the base revision, every `git show <base>:<path>` attempt with git's error, the parse result and the groups built; check `:messages`). Fully viewed groups (usually the auto-viewed ones) start collapsed, and `collapse_groups = true` collapses all groups. Your own collapse state is kept across refreshes.
 
 ```lua
 require("codediff").setup({
@@ -390,7 +390,7 @@ require("codediff").setup({
 
 #### Viewed state
 
-In revision mode every changed file can be marked as viewed, which keeps track of what you have already reviewed (it also works on the single `Changes` group when no rules apply). Viewed files show a marker (`viewed_icon`) before the file icon and are dimmed (`CodeDiffExplorerViewed`). Group headers read `Backend  1/4  +70 -15`: the viewed count out of the total (dimmed, `CodeDiffExplorerGroupProgress`), and the summed `+ins -del` of the files still unviewed when `show_line_stats` is on. The plain group reads `Changes  1/5`.
+In revision mode every changed file can be marked as viewed, which keeps track of what you have already reviewed (it also works on the single `Changes` group when no rules apply). Viewed files show a marker (`viewed_icon`) before the file icon and are dimmed (`CodeDiffExplorerViewed`). Group headers read `Backend  1/4  +70 -15`: the viewed count out of the total (dimmed, `CodeDiffExplorerGroupProgress`), and the summed `+ins -del` of the files still unviewed when `show_line_stats` is on. The plain group reads `Changes  1/5`. Directories (tree view) show the same remaining `+ins -del`. Auto-viewed group names are yellow (`CodeDiffExplorerGroupAutoViewed`). A directory or group whose files are all viewed is dimmed with the viewed marker and its full totals, and collapses as soon as it becomes fully viewed (and when the explorer opens). It opens again as soon as a file in it is unviewed, by you or because its diff changed on refresh. Opening or closing one by hand sticks until its viewed state changes again.
 
 - **Explorer `v`** (`keymaps.explorer.toggle_viewed`): toggles the file, directory or group under the cursor. On a directory or group, if any file is unviewed they all become viewed, otherwise they all become unviewed.
 - **Diff panes `<leader>v`** (`keymaps.view.toggle_viewed`): toggles the file you are looking at.

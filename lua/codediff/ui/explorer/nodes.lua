@@ -41,6 +41,8 @@ local INDENT_MARKERS = {
   none = " ", -- Space when parent was last item
 }
 
+local append_right_stats -- defined below M.aggregate
+
 -- Check if a file path matches merge artifact patterns
 local function is_merge_artifact(path)
   for _, pattern in ipairs(MERGE_ARTIFACT_PATTERNS) do
@@ -272,6 +274,61 @@ function M.viewed_marker()
   return icon .. " "
 end
 
+--- Aggregate the files at or under a group/directory node (expanded or not).
+--- review: true when the files carry a viewed state (revision mode with a review context).
+---@return {total: integer, viewed: integer, ins: integer, del: integer, unviewed_ins: integer, unviewed_del: integer, review: boolean}
+function M.aggregate(node)
+  local agg = { total = 0, viewed = 0, ins = 0, del = 0, unviewed_ins = 0, unviewed_del = 0, review = false }
+  local function walk(n)
+    local d = n.data or {}
+    if not d.type then
+      local ins, del = math.max(d.insertions or 0, 0), math.max(d.deletions or 0, 0)
+      agg.total = agg.total + 1
+      agg.ins = agg.ins + ins
+      agg.del = agg.del + del
+      if d.viewed ~= nil then
+        agg.review = true
+      end
+      if d.viewed then
+        agg.viewed = agg.viewed + 1
+      else
+        agg.unviewed_ins = agg.unviewed_ins + ins
+        agg.unviewed_del = agg.unviewed_del + del
+      end
+      return
+    end
+    for _, child in ipairs(n._children or {}) do
+      walk(child)
+    end
+  end
+  walk(node)
+  return agg
+end
+
+-- Right-aligned "+ins -del" for group/directory rows (explorer.show_line_stats); a zero side is left out.
+-- dim: draw both numbers with CodeDiffExplorerViewed (fully viewed rows).
+append_right_stats = function(line, left_width, max_width, ins, del, dim)
+  local explorer_config = config.options.explorer or {}
+  if not explorer_config.show_line_stats or (ins <= 0 and del <= 0) then
+    return
+  end
+  local parts = {}
+  if ins > 0 then parts[#parts + 1] = "+" .. tostring(ins) end
+  if del > 0 then parts[#parts + 1] = "-" .. tostring(del) end
+  local right_width = #table.concat(parts, " ")
+  local status_margin = explorer_config.status_right_margin or 1
+  line:append(string.rep(" ", math.max(2, max_width - left_width - right_width - status_margin)), "Normal")
+  if ins > 0 then
+    line:append("+" .. tostring(ins), dim and "CodeDiffExplorerViewed" or "DiagnosticOk")
+    if del > 0 then
+      line:append(" ", "Normal")
+    end
+  end
+  if del > 0 then
+    line:append("-" .. tostring(del), dim and "CodeDiffExplorerViewed" or "DiagnosticError")
+  end
+end
+
 -- Truncate str to fit within max_width display cells, ending with "..." when there is room for it
 local function truncate_to_width(str, max_width)
   local ellipsis = "..."
@@ -335,46 +392,59 @@ function M.prepare_node(node, max_width, selected_path, selected_group)
   end
 
   if data.type == "group" and data.review then
-    -- Review group header: name, viewed/total (dimmed), remaining +ins -del of unviewed files (right-aligned)
+    -- Review group header: name, viewed/total (dimmed), remaining +ins -del of unviewed files (right-aligned).
+    -- Auto-viewed groups keep a yellow name; fully viewed groups fade and show their full totals dimmed.
     local review = data.review
-    local progress = string.format("%d/%d", review.viewed or 0, review.total or 0)
-    local left_width = 1 + vim.fn.strdisplaywidth(review.name) + 2 + #progress
+    local agg = M.aggregate(node)
+    local done = agg.total > 0 and agg.viewed == agg.total
+    local progress = string.format("%d/%d", agg.viewed, agg.total)
+    if done then
+      progress = M.viewed_marker() .. progress
+    end
+    local name_hl = review.auto_viewed and "CodeDiffExplorerGroupAutoViewed" or (done and "CodeDiffExplorerViewed" or "CodeDiffExplorerTreeGroup")
     line:append(" ", "CodeDiffExplorerTreeGroup")
-    line:append(review.name, "CodeDiffExplorerTreeGroup")
+    line:append(review.name, name_hl)
     line:append("  ", "CodeDiffExplorerTreeGroup")
     line:append(progress, "CodeDiffExplorerGroupProgress")
-
-    local ins, del = review.ins or 0, review.del or 0
-    if explorer_config.show_line_stats and (ins > 0 or del > 0) then
-      local parts = {}
-      if ins > 0 then parts[#parts + 1] = "+" .. tostring(ins) end
-      if del > 0 then parts[#parts + 1] = "-" .. tostring(del) end
-      local right_width = #table.concat(parts, " ")
-      local status_margin = explorer_config.status_right_margin or 1
-      line:append(string.rep(" ", math.max(2, max_width - left_width - right_width - status_margin)), "Normal")
-      if ins > 0 then
-        line:append("+" .. tostring(ins), "DiagnosticOk")
-        if del > 0 then
-          line:append(" ", "Normal")
-        end
-      end
-      if del > 0 then
-        line:append("-" .. tostring(del), "DiagnosticError")
-      end
+    local left_width = 1 + vim.fn.strdisplaywidth(review.name) + 2 + vim.fn.strdisplaywidth(progress)
+    if done then
+      append_right_stats(line, left_width, max_width, agg.ins, agg.del, true)
+    else
+      append_right_stats(line, left_width, max_width, agg.unviewed_ins, agg.unviewed_del, false)
     end
   elseif data.type == "group" then
     -- Group header
     line:append(" ", "CodeDiffExplorerTreeGroup")
     line:append(node.text, "CodeDiffExplorerTreeGroup")
   elseif data.type == "directory" then
-    -- Directory node (tree view mode) - with indent markers
+    -- Directory node (tree view mode) - with indent markers, line stats of the files below it.
+    -- Review mode: viewed marker column like files; fully viewed directories fade (totals dimmed),
+    -- others show the remaining lines of their unviewed files.
     local indent = build_indent_markers(data.indent_state)
     local folder_icon, folder_color = M.get_folder_icon(node:is_expanded())
+    local agg = M.aggregate(node)
+    local done = agg.review and agg.total > 0 and agg.viewed == agg.total
+    local left_width = vim.fn.strdisplaywidth(indent)
     if #indent > 0 then
       line:append(indent, use_indent_markers and "NeoTreeIndentMarker" or "Normal")
     end
-    line:append(folder_icon .. " ", folder_color or "Directory")
-    line:append(data.name, "Directory")
+    if agg.review then
+      local marker = M.viewed_marker()
+      if done then
+        line:append(marker, "CodeDiffExplorerViewed")
+      else
+        line:append(string.rep(" ", vim.fn.strdisplaywidth(marker)), "Normal")
+      end
+      left_width = left_width + vim.fn.strdisplaywidth(marker)
+    end
+    line:append(folder_icon .. " ", done and "CodeDiffExplorerViewed" or (folder_color or "Directory"))
+    line:append(data.name, done and "CodeDiffExplorerViewed" or "Directory")
+    left_width = left_width + vim.fn.strdisplaywidth(folder_icon .. " ") + vim.fn.strdisplaywidth(data.name)
+    if agg.review and not done then
+      append_right_stats(line, left_width, max_width, agg.unviewed_ins, agg.unviewed_del, false)
+    else
+      append_right_stats(line, left_width, max_width, agg.ins, agg.del, done)
+    end
   else
     -- Match both path AND group to handle files in both staged and unstaged
     local is_selected = data.path and data.path == selected_path and data.group == selected_group
@@ -545,11 +615,28 @@ end
 --- Used by auto_width to determine optimal panel size.
 function M.compute_natural_width(node)
   local data = node.data or {}
-  if data.type == "group" or data.type == "directory" then
+  local explorer_config = config.options.explorer or {}
+  if data.type == "directory" then
+    -- indent + [viewed marker] + folder icon + name + line stats
+    local agg = M.aggregate(node)
+    local folder_icon = M.get_folder_icon(node:is_expanded())
+    local width = #(data.indent_state or {}) * 2 + vim.fn.strdisplaywidth(folder_icon .. " ") + vim.fn.strdisplaywidth(data.name or "")
+    if agg.review then
+      width = width + vim.fn.strdisplaywidth(M.viewed_marker())
+    end
+    local ins, del = agg.ins, agg.del
+    if explorer_config.show_line_stats and (ins > 0 or del > 0) then
+      local parts = {}
+      if ins > 0 then parts[#parts + 1] = "+" .. tostring(ins) end
+      if del > 0 then parts[#parts + 1] = "-" .. tostring(del) end
+      width = width + 2 + #table.concat(parts, " ") + (explorer_config.status_right_margin or 1)
+    end
+    return width
+  end
+  if data.type == "group" then
     return 0
   end
 
-  local explorer_config = config.options.explorer or {}
   local view_mode = explorer_config.view_mode or "list"
 
   local indent_width

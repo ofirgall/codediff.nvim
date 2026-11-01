@@ -84,11 +84,36 @@ Files in an auto-viewed group (`autoViewed: true`, or Generated) SHALL be viewed
 - **THEN** the lockfile is in `Lockfiles` but not viewed
 
 ### Requirement: Collapsed by default
-Auto-viewed groups SHALL start collapsed. A setup option SHALL make every review group start collapsed. Other groups SHALL start expanded.
+Fully viewed groups and directories, which by default include auto-viewed groups, SHALL start collapsed. A setup option SHALL make every review group start collapsed. Other groups SHALL start expanded.
 
 #### Scenario: Default collapse
 - **WHEN** a grouped review opens with default options
 - **THEN** `Lockfiles` and `Generated` are collapsed and `Backend` is expanded
+
+### Requirement: Fully viewed directories and groups collapse
+A directory or group whose files are all viewed SHALL be dimmed with the viewed marker and SHALL collapse when it becomes fully viewed, including when the explorer opens. It SHALL expand again, with its ancestors, as soon as one of its files is unviewed, whether by the user or because the file's diff changed. One opened or closed by hand SHALL keep that state until its viewed state changes again.
+
+#### Scenario: Last file of a directory viewed
+- **WHEN** the last unviewed file of `server/` in `Backend` is marked viewed
+- **THEN** `server/` and `Backend` collapse, are dimmed, and the cursor moves to the `Backend` header
+
+#### Scenario: File in a collapsed viewed group unviewed
+- **WHEN** a file in the collapsed, fully viewed `Lockfiles` group is unviewed (or its diff changes on refresh)
+- **THEN** `Lockfiles` expands
+
+### Requirement: Directory line stats
+With line stats on, directory rows SHALL show the summed `+ins -del` of their unviewed files, and the full totals dimmed once fully viewed.
+
+#### Scenario: Partly viewed directory
+- **WHEN** `server/a.go` (+30 -5) is viewed and `server/c.go` (+70 -1) is not
+- **THEN** the `server` row shows `+70 -1`
+
+### Requirement: Auto-viewed groups are highlighted
+Auto-viewed group names SHALL use a distinct highlight, yellow by default.
+
+#### Scenario: Lockfiles header
+- **WHEN** the explorer shows the auto-viewed `Lockfiles` group
+- **THEN** its name uses `CodeDiffExplorerGroupAutoViewed`
 
 ### Requirement: Navigation skips viewed files
 `]f`/`[f` SHALL move to the next or previous unviewed file in explorer order, including files in collapsed groups. A setup option SHALL turn the skipping off. When every file is viewed, navigation SHALL report that and stay on the current file.

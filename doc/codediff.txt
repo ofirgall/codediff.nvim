@@ -361,9 +361,10 @@ Options (`explorer.pr_review`) ~
   `enabled`           Set false to restore the plain `Changes` group.
   `groups`            Lua table overriding the repo config.
   `auto_mark_viewed`  Files in autoViewed/Generated groups start viewed.
-  `collapse_groups`   Start every review group collapsed. Auto-viewed groups
-                      always start collapsed. User collapse state is kept
-                      across refreshes.
+  `collapse_groups`   Start every review group collapsed. Fully viewed
+                      groups (usually auto-viewed ones) always start
+                      collapsed. User collapse state is kept across
+                      refreshes.
   `skip_viewed`       `]f` / `[f` skip viewed files.
   `viewed_icon`       Marker for viewed files.
   `regex_engine`      How `paths` patterns are matched. `"auto"` (default):
@@ -386,7 +387,13 @@ Viewed state ~
   (`CodeDiffExplorerViewed`). Group headers read `Backend  1/4  +70 -15`:
   viewed/total (`CodeDiffExplorerGroupProgress`) and, with `show_line_stats`,
   the summed +ins -del of the unviewed files. The plain group reads
-  `Changes  1/5`.
+  `Changes  1/5`. Directories show the same remaining +ins -del. Auto-viewed
+  group names are drawn with `CodeDiffExplorerGroupAutoViewed` (yellow).
+  A fully viewed directory or group is dimmed, shows `viewed_icon` and its
+  full +ins -del dimmed, and collapses when it becomes fully viewed (and on
+  open), and opens again as soon as a file in it is unviewed (by you, or
+  because its diff changed on refresh). Reopening or closing one by hand
+  sticks until its viewed state changes again.
 
   `v` (`keymaps.explorer.toggle_viewed`)
       Toggle the file, directory or group under the cursor. If any file below

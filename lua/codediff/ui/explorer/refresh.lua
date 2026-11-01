@@ -229,6 +229,9 @@ function M.refresh(explorer)
 
   -- Collect collapsed state before async operation
   local collapsed_state = collect_collapsed_state(explorer.tree)
+  -- Review groups/directories already fully viewed (only ones that become so get auto-collapsed)
+  local viewed_module = require("codediff.ui.explorer.viewed")
+  local done_before = viewed_module.done_keys(explorer.tree)
 
   -- Review groups: config/blobs/store load alongside the status fetch; attrs once files are known
   local pending_review = review_context.start({
@@ -297,6 +300,9 @@ function M.refresh(explorer)
         if review and review.default_collapsed and not previous_groups[node.data.name] then
           node:collapse()
         end
+      end
+      if review_ctx then
+        viewed_module.sync_collapsed(explorer.tree, done_before)
       end
 
       explorer.tree:render()

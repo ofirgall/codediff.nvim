@@ -200,6 +200,7 @@ function M.setup()
   -- Review (revision mode): viewed files and group header progress
   vim.api.nvim_set_hl(0, "CodeDiffExplorerViewed", { link = "Comment", default = true })
   vim.api.nvim_set_hl(0, "CodeDiffExplorerGroupProgress", { link = "Comment", default = true })
+  vim.api.nvim_set_hl(0, "CodeDiffExplorerGroupAutoViewed", { link = "DiagnosticWarn", default = true })
 
   -- Explorer git status highlights (customizable, like diffview.nvim)
   vim.api.nvim_set_hl(0, "CodeDiffStatusAdded", { link = "DiagnosticOk", default = true })

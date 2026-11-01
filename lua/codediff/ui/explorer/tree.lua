@@ -44,7 +44,7 @@ local function create_review_nodes(unstaged, git_root, review_ctx, view_mode)
         viewed = 0,
         ins = 0,
         del = 0,
-        default_collapsed = not bucket.single and (bucket.auto_viewed or pr.collapse_groups == true),
+        default_collapsed = not bucket.single and pr.collapse_groups == true,
       }
       local viewed_by_path = {}
       for _, file in ipairs(bucket.files) do
